@@ -30,6 +30,7 @@ import torchvision
 from torchvision import transforms as pth_transforms
 import numpy as np
 from PIL import Image
+from glob import glob
 
 import utils
 import vision_transformer as vits
@@ -94,6 +95,72 @@ def display_instances(image, mask, fname="test", figsize=(5, 5), blur=False, con
     print(f"{fname} saved.")
     return
 
+def visulaise_img(image_path:str, output_dir:str, threshold:float, patch_size=16, image_size=(480, 480)):
+    # open image
+    if image_path is None:
+        # user has not specified any image - we use our own image
+        print("Please use the `--image_path` argument to indicate the path of the image you wish to visualize.")
+        print("Since no image path have been provided, we take the first image in our paper.")
+        response = requests.get("https://dl.fbaipublicfiles.com/dino/img.png")
+        img = Image.open(BytesIO(response.content))
+        img = img.convert('RGB')
+    elif os.path.isfile(image_path):
+        with open(image_path, 'rb') as f:
+            img = Image.open(f)
+            img = img.convert('RGB')
+    else:
+        print(f"Provided image path {image_path} is non valid.")
+        sys.exit(1)
+    f_name = os.path.basename(image_path).split('.')[0]
+    transform = pth_transforms.Compose([
+        pth_transforms.Resize(image_size),
+        pth_transforms.ToTensor(),
+        # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        pth_transforms.Normalize((-0.5236307382583618, -0.5236307382583618, -0.5236307382583618), (0.5124182105064392, 0.5124182105064392, 0.5124182105064392)),
+    ])
+    img = transform(img)
+
+    # make the image divisible by the patch size
+    w, h = img.shape[1] - img.shape[1] % patch_size, img.shape[2] - img.shape[2] % patch_size
+    img = img[:, :w, :h].unsqueeze(0)
+
+    w_featmap = img.shape[-2] // patch_size
+    h_featmap = img.shape[-1] // patch_size
+
+    attentions = model.get_last_selfattention(img.to(device))
+
+    nh = attentions.shape[1] # number of head
+
+    # we keep only the output patch attention
+    attentions = attentions[0, :, 0, 1:].reshape(nh, -1)
+
+    if threshold is not None:
+        # we keep only a certain percentage of the mass
+        val, idx = torch.sort(attentions)
+        val /= torch.sum(val, dim=1, keepdim=True)
+        cumval = torch.cumsum(val, dim=1)
+        th_attn = cumval > (1 - threshold)
+        idx2 = torch.argsort(idx)
+        for head in range(nh):
+            th_attn[head] = th_attn[head][idx2[head]]
+        th_attn = th_attn.reshape(nh, w_featmap, h_featmap).float()
+        # interpolate
+        th_attn = nn.functional.interpolate(th_attn.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
+
+    attentions = attentions.reshape(nh, w_featmap, h_featmap)
+    attentions = nn.functional.interpolate(attentions.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
+
+    # save attentions heatmaps
+    torchvision.utils.save_image(torchvision.utils.make_grid(img, normalize=True, scale_each=True), os.path.join(output_dir, f"{f_name}.png"))
+    for j in range(nh):
+        fname = os.path.join(output_dir, f"{f_name}_head{j}.png")
+        plt.imsave(fname=fname, arr=attentions[j], format='png')
+        print(f"{fname} saved.")
+
+    if threshold is not None:
+        image = skimage.io.imread(os.path.join(output_dir, f"{f_name}.png"))
+        for j in range(nh):
+            display_instances(image, th_attn[j], fname=os.path.join(output_dir, f"{f_name}_mask_th{threshold}_head{j}.png"), blur=False)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
@@ -105,11 +172,12 @@ if __name__ == '__main__':
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
     parser.add_argument("--image_path", default=None, type=str, help="Path of the image to load.")
+    parser.add_argument("--image_dir", default=None, type=str, help="Path of the val images.")
     parser.add_argument("--image_size", default=(480, 480), type=int, nargs="+", help="Resize image.")
-    parser.add_argument('--output_dir', default='.', help='Path where to save visualizations.')
+    parser.add_argument('--output_dir', default='./logs', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=None, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     # build model
@@ -147,68 +215,24 @@ if __name__ == '__main__':
         else:
             print("There is no reference weights available for this model => We use random weights.")
 
-    # open image
-    if args.image_path is None:
-        # user has not specified any image - we use our own image
-        print("Please use the `--image_path` argument to indicate the path of the image you wish to visualize.")
-        print("Since no image path have been provided, we take the first image in our paper.")
-        response = requests.get("https://dl.fbaipublicfiles.com/dino/img.png")
-        img = Image.open(BytesIO(response.content))
-        img = img.convert('RGB')
-    elif os.path.isfile(args.image_path):
-        with open(args.image_path, 'rb') as f:
-            img = Image.open(f)
-            img = img.convert('RGB')
-    else:
-        print(f"Provided image path {args.image_path} is non valid.")
-        sys.exit(1)
-    transform = pth_transforms.Compose([
-        pth_transforms.Resize(args.image_size),
-        pth_transforms.ToTensor(),
-        # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        pth_transforms.Normalize((-0.5236307382583618, -0.5236307382583618, -0.5236307382583618), (0.5124182105064392, 0.5124182105064392, 0.5124182105064392)),
-    ])
-    img = transform(img)
+    # args.image_dir = '../../datasets/LIDC_IDRI/imagenet_3d_ann/Image/val'
 
-    # make the image divisible by the patch size
-    w, h = img.shape[1] - img.shape[1] % args.patch_size, img.shape[2] - img.shape[2] % args.patch_size
-    img = img[:, :w, :h].unsqueeze(0)
-
-    w_featmap = img.shape[-2] // args.patch_size
-    h_featmap = img.shape[-1] // args.patch_size
-
-    attentions = model.get_last_selfattention(img.to(device))
-
-    nh = attentions.shape[1] # number of head
-
-    # we keep only the output patch attention
-    attentions = attentions[0, :, 0, 1:].reshape(nh, -1)
-
-    if args.threshold is not None:
-        # we keep only a certain percentage of the mass
-        val, idx = torch.sort(attentions)
-        val /= torch.sum(val, dim=1, keepdim=True)
-        cumval = torch.cumsum(val, dim=1)
-        th_attn = cumval > (1 - args.threshold)
-        idx2 = torch.argsort(idx)
-        for head in range(nh):
-            th_attn[head] = th_attn[head][idx2[head]]
-        th_attn = th_attn.reshape(nh, w_featmap, h_featmap).float()
-        # interpolate
-        th_attn = nn.functional.interpolate(th_attn.unsqueeze(0), scale_factor=args.patch_size, mode="nearest")[0].cpu().numpy()
-
-    attentions = attentions.reshape(nh, w_featmap, h_featmap)
-    attentions = nn.functional.interpolate(attentions.unsqueeze(0), scale_factor=args.patch_size, mode="nearest")[0].cpu().numpy()
-
-    # save attentions heatmaps
     os.makedirs(args.output_dir, exist_ok=True)
-    torchvision.utils.save_image(torchvision.utils.make_grid(img, normalize=True, scale_each=True), os.path.join(args.output_dir, "img.png"))
-    for j in range(nh):
-        fname = os.path.join(args.output_dir, "attn-head" + str(j) + ".png")
-        plt.imsave(fname=fname, arr=attentions[j], format='png')
-        print(f"{fname} saved.")
 
-    if args.threshold is not None:
-        image = skimage.io.imread(os.path.join(args.output_dir, "img.png"))
-        for j in range(nh):
-            display_instances(image, th_attn[j], fname=os.path.join(args.output_dir, "mask_th" + str(args.threshold) + "_head" + str(j) +".png"), blur=False)
+    if args.image_dir is not None:
+        # Pick n samples from each label class
+        n = 3
+        get_nid = lambda fname: '_'.join(fname.split('_')[:2] + fname.split('_')[-2:-1])
+        nids = {}
+        for cls in os.listdir(args.image_dir):
+            for i_sample in range(n):
+                image_dir = os.path.join(args.image_dir, cls)
+                f_name = os.path.basename(random.choice(glob(f'{image_dir}/*')))
+                nid = get_nid(f_name.split('.')[0])
+                while nid in nids:
+                    f_name = os.path.basename(random.choice(glob(f'{image_dir}/*')))
+                    nid = get_nid(f_name.split('.')[0])
+                nids[nid] = cls
+                visulaise_img(os.path.join(image_dir, f_name), args.output_dir, args.threshold, patch_size=args.patch_size, image_size=args.image_size)
+    else:
+        visulaise_img(args.image_path, args.output_dir, args.threshold, patch_size=args.patch_size, image_size=args.image_size)
