@@ -16,6 +16,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import random
 
 import torch
 from torch import nn
@@ -28,9 +29,14 @@ from tqdm import tqdm
 
 import utils
 import vision_transformer as vits
+import data_LIDC_IDRI as data
 
 
 def eval_linear(args):
+    aggregate_labels = True
+    # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
+    stats = ((-0.5236307382583618, -0.5236307382583618, -0.5236307382583618), (0.5124182105064392, 0.5124182105064392, 0.5124182105064392))
+
     utils.init_distributed_mode(args)
     print("git:\n  {}\n".format(utils.get_sha()))
     print("\n".join("%s: %s" % (k, str(v)) for k, v in sorted(dict(vars(args)).items())))
@@ -57,23 +63,24 @@ def eval_linear(args):
     model.eval()
     # load weights to evaluate
     utils.load_pretrained_weights(model, args.pretrained_weights, args.checkpoint_key, args.arch, args.patch_size)
-    print(f"Model {args.arch} built.")
+    print(f"Model {args.arch} built. embed_dim: {embed_dim}")
 
     linear_classifier = LinearClassifier(embed_dim, num_labels=args.num_labels)
     linear_classifier = linear_classifier.cuda()
     linear_classifier = nn.parallel.DistributedDataParallel(linear_classifier, device_ids=[args.gpu])
 
     # ============ preparing data ... ============
-    val_transform = pth_transforms.Compose([
-        pth_transforms.Resize(256, interpolation=3),
-        pth_transforms.CenterCrop(224),
-        pth_transforms.ToTensor(),
-        # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        pth_transforms.Normalize((-0.5236307382583618, -0.5236307382583618, -0.5236307382583618), (0.5124182105064392, 0.5124182105064392, 0.5124182105064392)),
-    ])
-    dataset_val = datasets.ImageFolder(os.path.join(args.data_path, "val"), transform=val_transform)
+    valset = data.LIDC_IDRI_EXPL(args.data_path, "val", stats=stats, agg=aggregate_labels)
+    # val_transform = pth_transforms.Compose([
+    #     pth_transforms.Resize(256, interpolation=3),
+    #     pth_transforms.CenterCrop(224),
+    #     pth_transforms.ToTensor(),
+    #     # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    #     pth_transforms.Normalize(*stats),
+    # ])
+    # dataset_val = datasets.ImageFolder(os.path.join(args.data_path, "val"), transform=val_transform)
     val_loader = torch.utils.data.DataLoader(
-        dataset_val,
+        valset,
         batch_size=args.batch_size_per_gpu,
         num_workers=args.num_workers,
         pin_memory=True,
@@ -82,26 +89,29 @@ def eval_linear(args):
     if args.evaluate:
         utils.load_pretrained_linear_weights(linear_classifier, args.arch, args.patch_size)
         test_stats = validate_network(val_loader, model, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        print(f"Accuracy of the network on the {len(valset)} test images: {test_stats['acc1']:.1f}%")
         return
 
-    train_transform = pth_transforms.Compose([
-        pth_transforms.RandomResizedCrop(224),
-        pth_transforms.RandomHorizontalFlip(),
-        pth_transforms.ToTensor(),
-        # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        pth_transforms.Normalize((-0.5236307382583618, -0.5236307382583618, -0.5236307382583618), (0.5124182105064392, 0.5124182105064392, 0.5124182105064392)),
-    ])
-    dataset_train = datasets.ImageFolder(os.path.join(args.data_path, "train"), transform=train_transform)
-    sampler = torch.utils.data.distributed.DistributedSampler(dataset_train)
+    trainset = data.LIDC_IDRI_EXPL(args.data_path, "train", stats=stats, agg=aggregate_labels)
+    indices = random.choices(range(len(trainset)), k=round(args.label_frac * len(trainset)), weights=None)
+    trainset = torch.utils.data.Subset(trainset, indices)
+    # train_transform = pth_transforms.Compose([
+    #     pth_transforms.RandomResizedCrop(224),
+    #     pth_transforms.RandomHorizontalFlip(),
+    #     pth_transforms.ToTensor(),
+    #     # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    #     pth_transforms.Normalize(*stats),
+    # ])
+    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, "train"), transform=train_transform)
+    sampler = torch.utils.data.distributed.DistributedSampler(trainset)
     train_loader = torch.utils.data.DataLoader(
-        dataset_train,
+        trainset,
         sampler=sampler,
         batch_size=args.batch_size_per_gpu,
         num_workers=args.num_workers,
         pin_memory=True,
     )
-    print(f"Data loaded with {len(dataset_train)} train and {len(dataset_val)} val imgs.")
+    print(f"Data loaded with {len(trainset)} train and {len(valset)} val imgs.")
 
     # set optimizer
     optimizer = torch.optim.SGD(
@@ -134,7 +144,7 @@ def eval_linear(args):
                      'epoch': epoch}
         if epoch % args.val_freq == 0 or epoch == args.epochs - 1:
             test_stats = validate_network(val_loader, model, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens)
-            print(f"Accuracy at epoch {epoch} of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+            print(f"Accuracy at epoch {epoch} of the network on the {len(valset)} test images: {test_stats['acc1']:.1f}%")
             best_acc = max(best_acc, test_stats["acc1"])
             print(f'Max accuracy so far: {best_acc:.2f}%')
             log_stats = {**{k: v for k, v in log_stats.items()},
@@ -159,10 +169,11 @@ def train(model, linear_classifier, optimizer, loader, epoch, n, avgpool):
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
-    for (inp, target) in metric_logger.log_every(loader, 20, header):
+    for sample in metric_logger.log_every(loader, 20, header):
         # move to gpu
-        inp = inp.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
+        # inp = inp.cuda(non_blocking=True)
+        # target = target.cuda(non_blocking=True)
+        inp, target, img_ftr_id, image_id, img_expl = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
 
         # forward
         with torch.no_grad():
@@ -201,10 +212,11 @@ def validate_network(val_loader, model, linear_classifier, n, avgpool):
     linear_classifier.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
-    for inp, target in metric_logger.log_every(val_loader, 20, header):
+    for sample in metric_logger.log_every(val_loader, 20, header):
         # move to gpu
-        inp = inp.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
+        # inp = inp.cuda(non_blocking=True)
+        # target = target.cuda(non_blocking=True)
+        inp, target, img_ftr_id, image_id, img_expl = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
 
         # forward
         with torch.no_grad():
@@ -240,7 +252,7 @@ def validate_network(val_loader, model, linear_classifier, n, avgpool):
 
 class LinearClassifier(nn.Module):
     """Linear layer to train on top of frozen features"""
-    def __init__(self, dim, num_labels=1000):
+    def __init__(self, dim, num_labels=2):
         super(LinearClassifier, self).__init__()
         self.num_labels = num_labels
         self.linear = nn.Linear(dim, num_labels)
@@ -278,8 +290,9 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', default='/path/to/imagenet/', type=str)
     parser.add_argument('--num_workers', default=10, type=int, help='Number of data loading workers per GPU.')
     parser.add_argument('--val_freq', default=1, type=int, help="Epoch frequency for validation.")
-    parser.add_argument('--output_dir', default=".", help='Path to save logs and checkpoints')
-    parser.add_argument('--num_labels', default=1000, type=int, help='Number of labels for linear classifier')
+    parser.add_argument('--output_dir', default="./logs", help='Path to save logs and checkpoints')
+    parser.add_argument('--num_labels', default=2, type=int, help='Number of labels for linear classifier')
     parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
+    parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
     args = parser.parse_args()
     eval_linear(args)
