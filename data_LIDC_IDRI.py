@@ -16,7 +16,7 @@ import skimage.util as sku
 import pandas as pd
 import sklearn.preprocessing as skp
 import matplotlib.pyplot as plt
-
+from glob import glob
 
 
 # os.environ["MKL_NUM_THREADS"] = "6"
@@ -24,17 +24,6 @@ import matplotlib.pyplot as plt
 # os.environ["OMP_NUM_THREADS"] = "6"
 # torch.set_num_threads(6)
 
-CLASSES = {
-    "subtlety": [1, 2, 3, 4, 5],
-    "internalStructure": [1, 2, 3, 4],
-    "calcification": [1, 2, 3, 4, 5, 6],
-    "sphericity": [1, 2, 3, 4, 5],
-    "margin": [1, 2, 3, 4, 5],
-    "lobulation": [1, 2, 3, 4, 5],
-    "spiculation": [1, 2, 3, 4, 5],
-    "texture": [1, 2, 3, 4, 5],
-    # "malignancy": [1, 2, 3, 4, 5],
-}
 
 # %%
 class RandomRotation:
@@ -76,10 +65,10 @@ class LIDC_IDRI_EXPL(torch.utils.data.Dataset):
         #     pl.Scan.slice_thickness < 3
         # ) # "CT scans with slice thickness larger than or equal to 3 mm were also excluded"
         if agg:
-            self.img_ids, self.img_class_ids, self.img_ftr_ids, self.scenes, self.fnames, self.gt_img_expls, self.gt_table_expls = \
+            self.img_ids, self.img_class_ids, self.img_ftr_ids, self.scenes, self.fnames = \
                 self.prepare_scenes(df, df_median)
         else:
-            self.img_ids, self.img_class_ids, self.img_ftr_ids, self.scenes, self.fnames, self.gt_img_expls, self.gt_table_expls = \
+            self.img_ids, self.img_class_ids, self.img_ftr_ids, self.scenes, self.fnames = \
                 self.prepare_scenes(df)
 
         # transform_list = [
@@ -108,50 +97,26 @@ class LIDC_IDRI_EXPL(torch.utils.data.Dataset):
         self.transform = transforms.Compose(transform_list)
 
         self.n_classes = len(np.unique(self.img_class_ids, axis=0))
-        self.category_dict = CLASSES
-
-        # get ids of category ranges, i.e. shape has three categories from ids 0 to 2
-        category_ids = [3]
-        for v in CLASSES.values():
-            category_ids.append(category_ids[-1] + len(v))
-        self.category_ids = np.array(category_ids)
-
-    def object_to_fv(self, nod_ann):
-        # return a feature vector
-        coords = nod_ann.coords
-        subtlety = F.one_hot(torch.as_tensor(np.round(nod_ann.subtlety) - 1, dtype=torch.int64), num_classes=5)
-        internalStructure = F.one_hot(torch.as_tensor(np.round(nod_ann.internalStructure) - 1, dtype=torch.int64), num_classes=4)
-        calcification = F.one_hot(torch.as_tensor(np.round(nod_ann.calcification) - 1, dtype=torch.int64), num_classes=6)
-        sphericity = F.one_hot(torch.as_tensor(np.round(nod_ann.sphericity) - 1, dtype=torch.int64), num_classes=5)
-        margin = F.one_hot(torch.as_tensor(np.round(nod_ann.margin) - 1, dtype=torch.int64), num_classes=5)
-        lobulation = F.one_hot(torch.as_tensor(np.round(nod_ann.lobulation) - 1, dtype=torch.int64), num_classes=5)
-        spiculation = F.one_hot(torch.as_tensor(np.round(nod_ann.spiculation) - 1, dtype=torch.int64), num_classes=5)
-        texture = F.one_hot(torch.as_tensor(np.round(nod_ann.texture) - 1, dtype=torch.int64), num_classes=5)
-        # concatenate all the classes
-        # return a list, len() = 3 + 5 + 4 + 6 + 5 + 5 + 5 + 5 + 5 == 43
-        fv = torch.cat((torch.as_tensor(coords), subtlety, internalStructure,
-                       calcification, sphericity, margin, lobulation, spiculation, texture), dim=0)
-        return fv
 
     def prepare_scenes(self, df, df_median=None):
         # pids = []   # patient id
         img_ids = []    # nod id
         scenes = []     # nods
-        gt_img_expls = []
         img_class_ids = []
         img_ftr_ids = []
-        gt_table_expls = []
         fnames = []
 
         for ann in df.itertuples():
             # print(ann)
-            img_ids.append(ann.Index)
             if df_median is not None:
                 img_class_id = 0 if ann.malignancy < 3 else 1  # 0(unlikely):1-2, 1(suspicious):3-5
             else:
                 img_class_id = np.round(ann.malignancy) - 1
-            img_class_ids.append(img_class_id)
-            fnames.append(f"{os.path.join(self.base_path, 'Image', self.split, str(img_class_id), ann.Index)}.png")
+            imgs_per_ann = glob(f"{os.path.join(self.base_path, 'Image', self.split, str(img_class_id), ann.Index)}*.png")
+            fnames += imgs_per_ann
+            img_ids += [ann.Index] * len(imgs_per_ann)
+            img_class_ids += [img_class_id] * len(imgs_per_ann)
+
 
             # add feature labels
             img_ftr_id = {self.header[i-1]:np.round(ann[i]) - 1 for i in range(3, len(self.header))}
@@ -165,45 +130,9 @@ class LIDC_IDRI_EXPL(torch.utils.data.Dataset):
             #     "spiculation": 0 if ann.spiculation < 3 else 1,
             #     "texture": 0 if ann.texture > 4 else 1,
             # }
-            img_ftr_ids.append(img_ftr_id)
+            img_ftr_ids += [img_ftr_id] * len(imgs_per_ann)
 
-            # # only 1 object per sample
-            # # ann = df_median.loc[ann.nid] if df_median is not None else ann
-            # objects = [list(self.object_to_fv(ann))]
-            # objects = torch.FloatTensor(objects).transpose(0, 1)
-            # # objects.shape = torch.Size([43, 1])
-
-            # num_objects = objects.size(1) # =1
-            # # pad with 0s
-            # if num_objects < self.max_objects:
-            #     objects = torch.cat(
-            #         [
-            #             objects,
-            #             torch.zeros(objects.size(0), self.max_objects - num_objects),
-            #         ],
-            #         dim=1,
-            #     )
-
-            # #TODO: get gt table explanation based on the classification rule of the class label
-            # gt_table_expl_mask = self.get_table_expl_mask(objects, ann.malignancy)
-            # # gt_table_expl_mask.shape = torch.Size([10, 43])
-            # gt_table_expls.append(gt_table_expl_mask)
-
-            # # fill in masks
-            # mask = torch.zeros(self.max_objects)
-            # mask[:num_objects] = 1
-
-            # # concatenate obj indication to end of object list
-            # objects = torch.cat((mask.unsqueeze(dim=0), objects), dim=0)
-            # # objects.shape = torch.Size([43+1, 10])
-            # scenes.append(objects.T)
-
-            # get gt image explanation based on the classification rule of the class label
-            # gt_img_expl_mask.shape = torch.Size([128, 128])
-            gt_img_expl_mask = torch.tensor(skio.imread(f"{os.path.join(self.base_path, 'Mask', self.split, str(img_class_id), ann.Index)}.png"))
-            gt_img_expls.append(gt_img_expl_mask)
-
-        return img_ids, img_class_ids, img_ftr_ids, scenes, fnames, gt_img_expls, gt_table_expls
+        return img_ids, img_class_ids, img_ftr_ids, scenes, fnames
 
 
     def __getitem__(self, idx):
@@ -212,7 +141,7 @@ class LIDC_IDRI_EXPL(torch.utils.data.Dataset):
         # image = self.get_image(image_id)
         image = pil_loader(self.fnames[idx])
         # TODO: sofar only dummy
-        img_expl = self.gt_img_expls[idx]
+        img_expl = torch.tensor(skio.imread(self.fnames[idx].replace('Image', 'Mask')))
 
         if self.transform is not None:
             image = self.transform(image) # in range [0., 1.]
@@ -232,7 +161,7 @@ class LIDC_IDRI_EXPL(torch.utils.data.Dataset):
         return image, img_class_id, img_ftr_id, image_id, img_expl
 
     def __len__(self):
-        return len(self.img_ids)
+        return len(self.fnames)
 
 class LIDC_IDRI_FTR(torch.utils.data.Dataset):
     def __init__(self, base_path, split, agg=False):
