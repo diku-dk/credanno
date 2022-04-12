@@ -499,13 +499,16 @@ def init_distributed_mode(args):
     setup_for_distributed(args.rank == 0)
 
 
-def accuracy(output, target, topk=(1,)):
+def accuracy(output, target, topk=(1,), near=None):
     """Computes the accuracy over the k top predictions for the specified values of k"""
     maxk = max(topk)
     batch_size = target.size(0)
     _, pred = output.topk(maxk, 1, True, True)
     pred = pred.t()
-    correct = pred.eq(target.reshape(1, -1).expand_as(pred))
+    if near is None:
+        correct = pred.eq(target.reshape(1, -1).expand_as(pred))
+    else:
+        correct = abs(pred - (target.reshape(1, -1).expand_as(pred))) <= near
     return [correct[:k].reshape(-1).float().sum(0) * 100. / batch_size for k in topk]
 
 
@@ -827,3 +830,13 @@ def multi_scale(samples, model):
     v /= 3
     v /= v.norm()
     return v
+
+def seed_everything(seed=42):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
