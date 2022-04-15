@@ -143,8 +143,8 @@ def eval_linear(args):
     class_weights_ftr['calcification'] = torch.cat((torch.Tensor([0]), class_weights_ftr['calcification']), 0)
     class_weights_ftr['sphericity'] = torch.cat((torch.Tensor([0]), class_weights_ftr['sphericity']), 0)
 
-    for fk, v in class_weights_ftr.items():
-        print(f"{fk}: {v}")
+    # for fk, v in class_weights_ftr.items():
+    #     print(f"{fk}: {v}")
 
     # set optimizer
     optimizers = {}
@@ -202,6 +202,9 @@ def eval_linear(args):
                 torch.save(save_dict, os.path.join(args.output_dir, f"checkpoint_{fk}.pth.tar"))
     print("Training of the supervised linear classifier on frozen features completed.\n"
                 "Top-1 test accuracy: {acc:.1f}".format(acc=best_accs[fk]))
+    
+    df_results = write_results(valset, model, linear_classifiers, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+    df_results.to_csv(os.path.join(args.output_dir, 'pred_results.csv'))
 
 
 def train(model, linear_classifiers, optimizers, loader, epoch, n, avgpool, ftr_CLASSES, class_weights=None):
@@ -297,6 +300,41 @@ def validate_network(val_loader, model, linear_classifiers, n, avgpool, ftr_CLAS
         print('* Acc@1 {top1.global_avg:.3f} loss {losses.global_avg:.3f} -- {fk}'
             .format(top1=metric_logger.meters[f'acc1_{fk}'], losses=metric_logger.meters[f'loss_{fk}'], fk=fk))
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+
+@torch.no_grad()
+def write_results(valset, model, linear_classifiers, n, avgpool, ftr_CLASSES):
+    for fk in ftr_CLASSES.keys():
+        linear_classifiers[fk].eval()
+    test_loader = torch.utils.data.DataLoader(valset, shuffle=False, batch_size=valset.__len__(), pin_memory=True, num_workers=args.num_workers)
+    dataiter = iter(test_loader)
+    sample = dataiter.next()
+    inp, target, img_ftr_ids, image_id, img_expl = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
+    target_ftrs = {fk:v.long().cpu() for fk, v in img_ftr_ids.items()}
+    with torch.no_grad():
+        if "vit" in args.arch:
+            intermediate_output = model.get_intermediate_layers(inp, n)
+            output = torch.cat([x[:, 0] for x in intermediate_output], dim=-1)
+            if avgpool:
+                output = torch.cat((output.unsqueeze(-1), torch.mean(intermediate_output[-1][:, 1:], dim=1).unsqueeze(-1)), dim=-1)
+                output = output.reshape(output.shape[0], -1)
+        else:
+            output = model(inp)
+    
+    header = [
+        'img_id', 
+        'gt_subtlety', 'gt_internalStructure', 'gt_calcification', 'gt_sphericity', 'gt_margin', 'gt_lobulation', 'gt_spiculation', 'gt_texture', 'gt_malignancy',
+        'pd_subtlety', 'pd_internalStructure', 'pd_calcification', 'pd_sphericity', 'pd_margin', 'pd_lobulation', 'pd_spiculation', 'pd_texture', 'pd_malignancy',
+        ]
+    df = pd.DataFrame(columns=header)
+    df['img_id'] = image_id
+
+    for fk in ftr_CLASSES.keys():
+        output_f = linear_classifiers[fk](output)
+        _, pred = torch.max(output_f.data, 1)
+        df[f'gt_{fk}'] = target_ftrs[fk]
+        df[f'pd_{fk}'] = pred.cpu()
+    
+    return df
 
 
 class LinearClassifier(nn.Module):
