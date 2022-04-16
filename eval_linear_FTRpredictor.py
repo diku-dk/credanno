@@ -231,7 +231,7 @@ def eval_linear(args):
     #     print(f"{test_stats[f'acc1_{fk}']:.3f}% -- {fk}")
     
     df_results = write_results(valset, model, linear_classifiers, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
-    df_results.to_csv(os.path.join(args.output_dir, 'pred_results.csv'))
+    df_results.to_csv(os.path.join(args.output_dir, 'pred_resultsFTR.csv'))
 
 
 def train(model, linear_classifiers, optimizers, loader, epoch, n, avgpool, ftr_CLASSES, class_weights=None):

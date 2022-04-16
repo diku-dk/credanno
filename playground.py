@@ -25,11 +25,23 @@ import data_LIDC_IDRI as data
 
 # %%
 output_dir = './logs'
-df = pd.read_csv(f'{output_dir}/pred_results.csv', index_col=0)
-f_gt = df.loc[:, 'gt_subtlety':'gt_texture']
-f_pd = df.loc[:, 'pd_subtlety':'pd_texture']
-pred_array = abs(f_gt.to_numpy() - f_pd.to_numpy()) <= 1
-accs = pred_array.sum(axis=0) / len(pred_array)
-correctFTRs = pred_array.sum(axis=1)
+df_FTR = pd.read_csv(f'{output_dir}/pred_resultsFTR.csv', index_col=0)
+df_CLS = pd.read_csv(f'{output_dir}/pred_resultsCLS.csv', index_col=0)
+# df = df_CLS.merge(df_FTR, on='img_id', how='inner')
+df = df_CLS.fillna(df_FTR)
+
+gt_FTR = df_FTR.loc[:, 'gt_subtlety':'gt_texture']
+pd_FTR = df_FTR.loc[:, 'pd_subtlety':'pd_texture']
+
+gt_CLS = df_CLS.loc[:, 'gt_malignancy']
+pd_CLS = df_CLS.loc[:, 'pd_malignancy']
+
+preds_FTR = abs(gt_FTR.to_numpy() - pd_FTR.to_numpy()) <= 1
+accs_FTR = preds_FTR.sum(axis=0) / len(preds_FTR)
+correctFTRs = preds_FTR.sum(axis=1)
+
+preds_CLS = gt_CLS.to_numpy() == pd_CLS.to_numpy()
+accs_CLS = preds_CLS.sum(axis=0) / len(preds_CLS)
+correctCLSs = preds_CLS.sum(axis=0)
 
 # %%
