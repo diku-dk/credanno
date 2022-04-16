@@ -36,6 +36,7 @@ def eval_linear(args):
     aggregate_labels = True
     # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
     stats = ((-0.5236307382583618, -0.5236307382583618, -0.5236307382583618), (0.5124182105064392, 0.5124182105064392, 0.5124182105064392))
+    utils.seed_everything(42)
 
     utils.init_distributed_mode(args)
     print("git:\n  {}\n".format(utils.get_sha()))
@@ -144,7 +145,7 @@ def eval_linear(args):
                      'epoch': epoch}
         if epoch % args.val_freq == 0 or epoch == args.epochs - 1:
             test_stats = validate_network(val_loader, model, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens)
-            print(f"Accuracy at epoch {epoch} of the network on the {len(valset)} test images: {test_stats['acc1']:.1f}%")
+            print(f"Accuracy at epoch {epoch} of the network on the {len(valset)} test images: {test_stats['acc1']:.2f}%")
             best_acc = max(best_acc, test_stats["acc1"])
             print(f'Max accuracy so far: {best_acc:.2f}%')
             log_stats = {**{k: v for k, v in log_stats.items()},
@@ -152,17 +153,37 @@ def eval_linear(args):
         if utils.is_main_process():
             with (Path(args.output_dir) / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
-            save_dict = {
-                "epoch": epoch + 1,
-                "state_dict": linear_classifier.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict(),
-                "best_acc": best_acc,
-            }
-            torch.save(save_dict, os.path.join(args.output_dir, "checkpoint.pth.tar"))
+            epoch_save = epoch + 1
+            if best_acc == test_stats["acc1"]:
+                save_dict = {
+                    "epoch": epoch_save,
+                    "state_dict": linear_classifier.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "best_acc": best_acc,
+                }
+                torch.save(save_dict, os.path.join(args.output_dir, "checkpoint_best.pth.tar"))
+            if epoch_save == args.epochs:
+                save_dict = {
+                    "epoch": epoch + 1,
+                    "state_dict": linear_classifier.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "best_acc": best_acc,
+                }
+                torch.save(save_dict, os.path.join(args.output_dir, "checkpoint.pth.tar"))
     print("Training of the supervised linear classifier on frozen features completed.\n"
-                "Top-1 test accuracy: {acc:.1f}".format(acc=best_acc))
+                "Top-1 test accuracy: {acc:.2f}".format(acc=best_acc))
 
+    utils.restart_from_checkpoint(
+        os.path.join(args.output_dir, "checkpoint_best.pth.tar"),
+        run_variables=to_restore,
+        state_dict=linear_classifier,
+        optimizer=optimizer,
+        scheduler=scheduler,
+    )
+    test_stats = validate_network(val_loader, model, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens)
+    # print(f"Best accuracy at epoch {args.epochs} of the network on the {len(valset)} test images: {test_stats['acc1']:.2f}%")
 
 def train(model, linear_classifier, optimizer, loader, epoch, n, avgpool):
     linear_classifier.train()

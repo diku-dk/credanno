@@ -52,6 +52,7 @@ def eval_linear(args):
         "texture": [1, 2, 3, 4, 5],
         # "malignancy": [1, 2, 3, 4, 5],
     }
+    utils.seed_everything(42)
 
     utils.init_distributed_mode(args)
     print("git:\n  {}\n".format(utils.get_sha()))
@@ -149,6 +150,7 @@ def eval_linear(args):
     # set optimizer
     optimizers = {}
     schedulers = {}
+    best_accs = {}
     for fk in ftr_CLASSES.keys():
         optimizers[fk] = torch.optim.SGD(
             linear_classifiers[fk].parameters(),
@@ -159,7 +161,8 @@ def eval_linear(args):
         schedulers[fk] = torch.optim.lr_scheduler.CosineAnnealingLR(optimizers[fk], args.epochs, eta_min=0)
 
         # Optionally resume from a checkpoint
-        to_restore = {"epoch": 0, "best_acc": 0.}
+        to_restore = {"epoch": 0}
+        to_restore[f"best_acc_{fk}"] = 0.
         utils.restart_from_checkpoint(
             os.path.join(args.output_dir, f"checkpoint_{fk}.pth.tar"),
             run_variables=to_restore,
@@ -168,7 +171,7 @@ def eval_linear(args):
             scheduler=schedulers[fk],
         )
         start_epoch = to_restore["epoch"]
-        best_accs = {fk:to_restore["best_acc"] for fk in ftr_CLASSES.keys()}
+        best_accs[fk] = to_restore[f"best_acc_{fk}"]
 
     for epoch in tqdm(range(start_epoch, args.epochs)):
         train_loader.sampler.set_epoch(epoch)
@@ -191,17 +194,41 @@ def eval_linear(args):
         if utils.is_main_process():
             with (Path(args.output_dir) / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
+            epoch_save = epoch + 1
             for fk in ftr_CLASSES.keys():
-                save_dict = {
-                    "epoch": epoch + 1,
-                    "state_dict": linear_classifiers[fk].state_dict(),
-                    "optimizer": optimizers[fk].state_dict(),
-                    "scheduler": schedulers[fk].state_dict(),
-                    f"best_acc_{fk}": best_accs[fk],
-                }
-                torch.save(save_dict, os.path.join(args.output_dir, f"checkpoint_{fk}.pth.tar"))
+                if best_accs[fk] == test_stats[f'acc1_{fk}']:
+                    save_dict = {
+                        "epoch": epoch_save,
+                        "state_dict": linear_classifiers[fk].state_dict(),
+                        "optimizer": optimizers[fk].state_dict(),
+                        "scheduler": schedulers[fk].state_dict(),
+                        f"best_acc_{fk}": best_accs[fk],
+                    }
+                    torch.save(save_dict, os.path.join(args.output_dir, f"checkpoint_{fk}_best.pth.tar"))
+                if epoch_save == args.epochs:
+                    save_dict = {
+                        "epoch": epoch + 1,
+                        "state_dict": linear_classifiers[fk].state_dict(),
+                        "optimizer": optimizers[fk].state_dict(),
+                        "scheduler": schedulers[fk].state_dict(),
+                        f"best_acc_{fk}": best_accs[fk],
+                    }
+                    torch.save(save_dict, os.path.join(args.output_dir, f"checkpoint_{fk}.pth.tar"))
     print("Training of the supervised linear classifier on frozen features completed.\n"
-                "Top-1 test accuracy: {acc:.1f}".format(acc=best_accs[fk]))
+                "Top-1 test accuracy: ")
+    for fk in ftr_CLASSES.keys():
+        # print(f'{best_accs[fk]:.3f}% -- {fk}')
+        utils.restart_from_checkpoint(
+            os.path.join(args.output_dir, f"checkpoint_{fk}_best.pth.tar"),
+            run_variables=to_restore,
+            state_dict=linear_classifiers[fk],
+            optimizer=optimizers[fk],
+            scheduler=schedulers[fk],
+        )
+    test_stats = validate_network(val_loader, model, linear_classifiers, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+    # print(f"Best accuracy till epoch {args.epochs} of the network on the {len(valset)} test images: ")
+    # for fk in ftr_CLASSES.keys():
+    #     print(f"{test_stats[f'acc1_{fk}']:.3f}% -- {fk}")
     
     df_results = write_results(valset, model, linear_classifiers, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
     df_results.to_csv(os.path.join(args.output_dir, 'pred_results.csv'))
