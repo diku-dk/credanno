@@ -116,7 +116,8 @@ def visulaise_img(image_path:str, output_dir:str, threshold:float, patch_size=16
         pth_transforms.Resize(image_size),
         pth_transforms.ToTensor(),
         # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        pth_transforms.Normalize((-0.5236307382583618, -0.5236307382583618, -0.5236307382583618), (0.5124182105064392, 0.5124182105064392, 0.5124182105064392)),
+        # pth_transforms.Normalize((-0.5236307382583618, -0.5236307382583618, -0.5236307382583618), (0.5124182105064392, 0.5124182105064392, 0.5124182105064392)),
+        pth_transforms.Normalize((0.2281477451324463, 0.2281477451324463, 0.2281477451324463), (0.25145936012268066, 0.25145936012268066, 0.25145936012268066)),
     ])
     img = transform(img)
 

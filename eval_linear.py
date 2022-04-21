@@ -35,8 +35,14 @@ import data_LIDC_IDRI as data
 
 def eval_linear(args):
     aggregate_labels = True
+
     # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
-    stats = ((-0.5236307382583618, -0.5236307382583618, -0.5236307382583618), (0.5124182105064392, 0.5124182105064392, 0.5124182105064392))
+    # args.arch = 'resnet50'
+    # args.end2end = True
+    # args.nopretrain = True
+    
+    # stats = ((-0.5186440944671631, -0.5186440944671631, -0.5186440944671631), (0.511863112449646, 0.511863112449646, 0.511863112449646))
+    stats = ((0.2281477451324463, 0.2281477451324463, 0.2281477451324463), (0.25145936012268066, 0.25145936012268066, 0.25145936012268066))
     utils.seed_everything(42)
 
     utils.init_distributed_mode(args)
@@ -127,7 +133,7 @@ def eval_linear(args):
     # Optionally resume from a checkpoint
     to_restore = {"epoch": 0, "best_acc": 0.}
     utils.restart_from_checkpoint(
-        os.path.join(args.output_dir, "checkpoint.pth.tar"),
+        os.path.join(args.output_dir, f"ckpt_{args.arch}.pth.tar"),
         run_variables=to_restore,
         state_dict=linear_classifier,
         optimizer=optimizer,
@@ -163,7 +169,7 @@ def eval_linear(args):
                     "scheduler": scheduler.state_dict(),
                     "best_acc": best_acc,
                 }
-                torch.save(save_dict, os.path.join(args.output_dir, "checkpoint_best.pth.tar"))
+                torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{args.arch}_best.pth.tar"))
             if epoch_save == args.epochs:
                 save_dict = {
                     "epoch": epoch + 1,
@@ -172,12 +178,12 @@ def eval_linear(args):
                     "scheduler": scheduler.state_dict(),
                     "best_acc": best_acc,
                 }
-                torch.save(save_dict, os.path.join(args.output_dir, "checkpoint.pth.tar"))
+                torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{args.arch}.pth.tar"))
     print("Training of the supervised linear classifier on frozen features completed.\n"
-                "Top-1 test accuracy: {acc:.2f}".format(acc=best_acc))
+                "Top-1 test accuracy: {acc:.3f}".format(acc=best_acc))
 
     utils.restart_from_checkpoint(
-        os.path.join(args.output_dir, "checkpoint_best.pth.tar"),
+        os.path.join(args.output_dir, f"ckpt_{args.arch}_best.pth.tar"),
         run_variables=to_restore,
         state_dict=linear_classifier,
         optimizer=optimizer,
@@ -349,6 +355,8 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', default="./logs", help='Path to save logs and checkpoints')
     parser.add_argument('--num_labels', default=2, type=int, help='Number of labels for linear classifier')
     parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
+    parser.add_argument('--end2end', dest='end2end', action='store_true', help='do not freeze the backbone embedding extractor')
+    parser.add_argument('--nopretrain', dest='nopretrain', action='store_true', help='do not load any pretrained weights')
     parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
     args = parser.parse_args()
     eval_linear(args)
