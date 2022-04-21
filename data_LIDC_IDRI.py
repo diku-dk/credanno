@@ -71,26 +71,44 @@ class LIDC_IDRI_EXPL(torch.utils.data.Dataset):
             self.img_ids, self.img_class_ids, self.img_ftr_ids, self.scenes, self.fnames = \
                 self.prepare_scenes(df)
 
-        # transform_list = [
-        #     transforms.Resize(self.img_shape),
-        #     ]
-        # if split == "train" and stats is not None:
-        #     transform_list += [
-        #         transforms.RandomHorizontalFlip(), 
+
+        # if split == "train":
+        #     transform_list = [
+        #         transforms.Resize((32, 32)),
+        #         transforms.RandomHorizontalFlip(),
         #         transforms.RandomVerticalFlip(),
-        #         RandomRotation(angles=[0, 90, 180, 270]),
+        #         # RandomRotation(angles=[0, 90, 180, 270]),
         #         transforms.GaussianBlur(kernel_size=1),
-        #         ]
+        #     ]
+        # else:
+        #     transform_list = [
+        #         transforms.Resize((32, 32)),
+        #     ]
+
         if split == "train":
             transform_list = [
                 transforms.RandomResizedCrop(224),
                 transforms.RandomHorizontalFlip(),
+                transforms.RandomVerticalFlip(),
+                RandomRotation(angles=[0, 90, 180, 270]),
+                # transforms.RandomPerspective(distortion_scale=0.1, p=0.5),
+                transforms.GaussianBlur(kernel_size=1),
             ]
         else:
             transform_list = [
                 transforms.Resize(256, interpolation=3),
                 transforms.CenterCrop(224),
             ]
+            '''
+            inverse_modes_mapping = {
+                0: InterpolationMode.NEAREST,
+                2: InterpolationMode.BILINEAR,
+                3: InterpolationMode.BICUBIC,
+                4: InterpolationMode.BOX,
+                5: InterpolationMode.HAMMING,
+                1: InterpolationMode.LANCZOS,
+            }
+            '''
         transform_list.append(transforms.ToTensor())
         if stats is not None:
             transform_list.append(transforms.Normalize(*stats))
@@ -145,7 +163,7 @@ class LIDC_IDRI_EXPL(torch.utils.data.Dataset):
 
         if self.transform is not None:
             image = self.transform(image) # in range [0., 1.]
-            image = (image - 0.5) * 2.0  # Rescale to [-1, 1].
+            # image = (image - 0.5) * 2.0  # Rescale to [-1, 1].
             # img_expl = self.transform_img_expl(img_expl)
         if image.size(0) == 1:
             image = image.repeat(3, 1, 1)
