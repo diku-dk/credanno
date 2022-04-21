@@ -45,3 +45,20 @@ accs_CLS = preds_CLS.sum(axis=0) / len(preds_CLS)
 correctCLSs = preds_CLS.sum(axis=0)
 
 # %%
+# joint predictions
+output_dir = './logs'
+df = pd.read_csv(f'{output_dir}/pred_results.csv', index_col=0)
+
+gt_FTR = df.loc[:, 'gt_subtlety':'gt_texture']
+pd_FTR = df.loc[:, 'pd_subtlety':'pd_texture']
+
+gt_CLS = df.loc[:, 'gt_malignancy']
+pd_CLS = df.loc[:, 'pd_malignancy']
+
+preds_FTR = abs(gt_FTR.to_numpy() - pd_FTR.to_numpy()) <= 1
+accs_FTR = preds_FTR.sum(axis=0) / len(preds_FTR)
+correctFTRs = preds_FTR.sum(axis=1)
+
+preds_CLS = gt_CLS.to_numpy() == pd_CLS.to_numpy()
+accs_CLS = preds_CLS.sum(axis=0) / len(preds_CLS)
+correctCLSs = preds_CLS.sum(axis=0)

@@ -152,9 +152,9 @@ def eval_linear(args):
                      'epoch': epoch}
         if epoch % args.val_freq == 0 or epoch == args.epochs - 1:
             test_stats = validate_network(val_loader, model, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens)
-            print(f"Accuracy at epoch {epoch} of the network on the {len(valset)} test images: {test_stats['acc1']:.2f}%")
+            print(f"Accuracy at epoch {epoch} of the network on the {len(valset)} test images: {test_stats['acc1']:.3f}%")
             best_acc = max(best_acc, test_stats["acc1"])
-            print(f'Max accuracy so far: {best_acc:.2f}%')
+            print(f'Max accuracy so far: {best_acc:.3f}%')
             log_stats = {**{k: v for k, v in log_stats.items()},
                          **{f'test_{k}': v for k, v in test_stats.items()}}
         if utils.is_main_process():
@@ -248,6 +248,7 @@ def validate_network(val_loader, model, linear_classifier, n, avgpool):
         # inp = inp.cuda(non_blocking=True)
         # target = target.cuda(non_blocking=True)
         inp, target, img_ftr_id, image_id, img_expl = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
+        batch_size = inp.shape[0]
 
         # forward
         with torch.no_grad():
@@ -267,7 +268,6 @@ def validate_network(val_loader, model, linear_classifier, n, avgpool):
         else:
             acc1, = utils.accuracy(output, target, topk=(1,))
 
-        batch_size = inp.shape[0]
         metric_logger.update(loss=loss.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         if linear_classifier.module.num_labels >= 5:

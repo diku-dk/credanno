@@ -83,11 +83,17 @@ def eval_linear(args):
     utils.load_pretrained_weights(model, args.pretrained_weights, args.checkpoint_key, args.arch, args.patch_size)
     print(f"Model {args.arch} built. embed_dim: {embed_dim}")
 
-    linear_classifiers = {}
+    linear_classifiers_ftr = {}
+    embed_dim_catted = embed_dim
     for fk, v in ftr_CLASSES.items():
-        linear_classifiers[fk] = LinearClassifier(embed_dim, num_labels=len(v))
-        linear_classifiers[fk] = linear_classifiers[fk].cuda()
-        linear_classifiers[fk] = nn.parallel.DistributedDataParallel(linear_classifiers[fk], device_ids=[args.gpu])
+        linear_classifiers_ftr[fk] = LinearClassifier(embed_dim, num_labels=len(v))
+        embed_dim_catted += linear_classifiers_ftr[fk].linear.out_features
+        linear_classifiers_ftr[fk] = linear_classifiers_ftr[fk].cuda()
+        linear_classifiers_ftr[fk] = nn.parallel.DistributedDataParallel(linear_classifiers_ftr[fk], device_ids=[args.gpu])
+
+    linear_classifier = LinearClassifier(embed_dim_catted, num_labels=args.num_labels)
+    linear_classifier = linear_classifier.cuda()
+    linear_classifier = nn.parallel.DistributedDataParallel(linear_classifier, device_ids=[args.gpu])
 
     # ============ preparing data ... ============
     valset = data.LIDC_IDRI_EXPL(args.data_path, "val", stats=stats, agg=aggregate_labels)
@@ -112,8 +118,8 @@ def eval_linear(args):
         print(f"{fk}: {dict(zip(*np.unique(df[fk], return_counts=True)))}")
 
     # if args.evaluate:
-    #     utils.load_pretrained_linear_weights(linear_classifiers, args.arch, args.patch_size)
-    #     test_stats = validate_network(val_loader, model, linear_classifiers, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+    #     utils.load_pretrained_linear_weights(linear_classifiers_ftr, linear_classifier, args.arch, args.patch_size)
+    #     test_stats = validate_network(val_loader, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
     #     print(f"Accuracy of the network on the {len(valset)} test images: {test_stats['acc1']:.1f}%")
     #     return
 
@@ -148,48 +154,72 @@ def eval_linear(args):
     # for fk, v in class_weights_ftr.items():
     #     print(f"{fk}: {v}")
 
-    # set optimizer
-    optimizers = {}
-    schedulers = {}
-    best_accs = {}
+    # set optimizer for CLS
+    optimizer = torch.optim.SGD(
+        linear_classifier.parameters(),
+        args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 256., # linear scaling rule
+        momentum=0.9,
+        weight_decay=0, # we do not apply weight decay
+    )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, eta_min=0)
+
+    # Optionally resume from a checkpoint for CLS
+    to_restore = {"epoch": 0, "best_acc": 0.}
+    utils.restart_from_checkpoint(
+        os.path.join(args.output_dir, f"ckpt_{args.arch}.pth.tar"),
+        run_variables=to_restore,
+        state_dict=linear_classifier,
+        optimizer=optimizer,
+        scheduler=scheduler,
+    )
+    start_epoch = to_restore["epoch"]
+    best_acc = to_restore["best_acc"]
+
+    # set optimizers for FTRs
+    optimizers_ftr = {}
+    schedulers_ftr = {}
+    best_accs_ftr = {}
     for fk in ftr_CLASSES.keys():
-        optimizers[fk] = torch.optim.SGD(
-            linear_classifiers[fk].parameters(),
+        optimizers_ftr[fk] = torch.optim.SGD(
+            linear_classifiers_ftr[fk].parameters(),
             args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 256., # linear scaling rule
             momentum=0.9,
             weight_decay=0, # we do not apply weight decay
         )
-        schedulers[fk] = torch.optim.lr_scheduler.CosineAnnealingLR(optimizers[fk], args.epochs, eta_min=0)
+        schedulers_ftr[fk] = torch.optim.lr_scheduler.CosineAnnealingLR(optimizers_ftr[fk], args.epochs, eta_min=0)
 
-        # Optionally resume from a checkpoint
+        # Optionally resume from a checkpoint for FTRs
         to_restore = {"epoch": 0}
         to_restore[f"best_acc_{fk}"] = 0.
         utils.restart_from_checkpoint(
-            os.path.join(args.output_dir, f"ckpt_{fk}.pth.tar"),
+            os.path.join(args.output_dir, f"ckpt_{args.arch}_{fk}.pth.tar"),
             run_variables=to_restore,
-            state_dict=linear_classifiers[fk],
-            optimizer=optimizers[fk],
-            scheduler=schedulers[fk],
+            state_dict=linear_classifiers_ftr[fk],
+            optimizer=optimizers_ftr[fk],
+            scheduler=schedulers_ftr[fk],
         )
         start_epoch = to_restore["epoch"]
-        best_accs[fk] = to_restore[f"best_acc_{fk}"]
+        best_accs_ftr[fk] = to_restore[f"best_acc_{fk}"]
 
     for epoch in tqdm(range(start_epoch, args.epochs)):
         train_loader.sampler.set_epoch(epoch)
 
-        train_stats = train(model, linear_classifiers, optimizers, train_loader, epoch, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+        train_stats = train(model, linear_classifiers_ftr, linear_classifier, optimizers_ftr, optimizer, train_loader, epoch, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
         for fk in ftr_CLASSES.keys():
-            schedulers[fk].step()
+            schedulers_ftr[fk].step()
+        scheduler.step()
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      'epoch': epoch}
         if epoch % args.val_freq == 0 or epoch == args.epochs - 1:
-            test_stats = validate_network(val_loader, model, linear_classifiers, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
-            print(f"Max Accuracy so far at epoch {epoch} of the network on the {len(valset)} test images: ")
+            test_stats = validate_network(val_loader, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+            print(f"Max Accuracy so far at epoch {epoch} of the network on the {len(valset)} test images: {test_stats['acc1']:.3f}%")
             for fk in ftr_CLASSES.keys():
                 # print(f"{test_stats[f'acc1_{fk}']:.1f}% -- {fk}")
-                best_accs[fk] = max(best_accs[fk], test_stats[f'acc1_{fk}'])
-                print(f'{best_accs[fk]:.3f}% -- {fk}')
+                best_accs_ftr[fk] = max(best_accs_ftr[fk], test_stats[f'acc1_{fk}'])
+                print(f'{best_accs_ftr[fk]:.3f}% -- {fk}')
+            best_acc = max(best_acc, test_stats["acc1"])
+            print(f'{best_acc:.3f}% -- malignancy')
             log_stats = {**{k: v for k, v in log_stats.items()},
                          **{f'test_{k}': v for k, v in test_stats.items()}}
         if utils.is_main_process():
@@ -197,50 +227,77 @@ def eval_linear(args):
                 f.write(json.dumps(log_stats) + "\n")
             epoch_save = epoch + 1
             for fk in ftr_CLASSES.keys():
-                if best_accs[fk] == test_stats[f'acc1_{fk}']:
+                if best_accs_ftr[fk] == test_stats[f'acc1_{fk}']:
                     save_dict = {
                         "epoch": epoch_save,
-                        "state_dict": linear_classifiers[fk].state_dict(),
-                        "optimizer": optimizers[fk].state_dict(),
-                        "scheduler": schedulers[fk].state_dict(),
-                        f"best_acc_{fk}": best_accs[fk],
+                        "state_dict": linear_classifiers_ftr[fk].state_dict(),
+                        "optimizer": optimizers_ftr[fk].state_dict(),
+                        "scheduler": schedulers_ftr[fk].state_dict(),
+                        f"best_acc_{fk}": best_accs_ftr[fk],
                     }
-                    torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{fk}_best.pth.tar"))
+                    torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{args.arch}_{fk}_best.pth.tar"))
                 if epoch_save == args.epochs:
                     save_dict = {
                         "epoch": epoch + 1,
-                        "state_dict": linear_classifiers[fk].state_dict(),
-                        "optimizer": optimizers[fk].state_dict(),
-                        "scheduler": schedulers[fk].state_dict(),
-                        f"best_acc_{fk}": best_accs[fk],
+                        "state_dict": linear_classifiers_ftr[fk].state_dict(),
+                        "optimizer": optimizers_ftr[fk].state_dict(),
+                        "scheduler": schedulers_ftr[fk].state_dict(),
+                        f"best_acc_{fk}": best_accs_ftr[fk],
                     }
-                    torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{fk}.pth.tar"))
+                    torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{args.arch}_{fk}.pth.tar"))
+            if best_acc == test_stats["acc1"]:
+                save_dict = {
+                    "epoch": epoch_save,
+                    "state_dict": linear_classifier.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "best_acc": best_acc,
+                }
+                torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{args.arch}_best.pth.tar"))
+            if epoch_save == args.epochs:
+                save_dict = {
+                    "epoch": epoch + 1,
+                    "state_dict": linear_classifier.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "best_acc": best_acc,
+                }
+                torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{args.arch}.pth.tar"))
     print("Training of the supervised linear classifier on frozen features completed.\n"
-                "Top-1 test accuracy: ")
+                "Top-1 test accuracy: {acc:.3f}".format(acc=best_acc))
     for fk in ftr_CLASSES.keys():
-        # print(f'{best_accs[fk]:.3f}% -- {fk}')
+        # print(f'{best_accs_ftr[fk]:.3f}% -- {fk}')
         utils.restart_from_checkpoint(
-            os.path.join(args.output_dir, f"ckpt_{fk}_best.pth.tar"),
+            os.path.join(args.output_dir, f"ckpt_{args.arch}_{fk}_best.pth.tar"),
             run_variables=to_restore,
-            state_dict=linear_classifiers[fk],
-            optimizer=optimizers[fk],
-            scheduler=schedulers[fk],
+            state_dict=linear_classifiers_ftr[fk],
+            optimizer=optimizers_ftr[fk],
+            scheduler=schedulers_ftr[fk],
         )
-    test_stats = validate_network(val_loader, model, linear_classifiers, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+    utils.restart_from_checkpoint(
+        os.path.join(args.output_dir, f"ckpt_{args.arch}_best.pth.tar"),
+        run_variables=to_restore,
+        state_dict=linear_classifier,
+        optimizer=optimizer,
+        scheduler=scheduler,
+    )
+    test_stats = validate_network(val_loader, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
     # print(f"Best accuracy till epoch {args.epochs} of the network on the {len(valset)} test images: ")
     # for fk in ftr_CLASSES.keys():
     #     print(f"{test_stats[f'acc1_{fk}']:.3f}% -- {fk}")
     
-    df_results = write_results(valset, model, linear_classifiers, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
-    df_results.to_csv(os.path.join(args.output_dir, 'pred_resultsFTR.csv'))
+    df_results = write_results(valset, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+    df_results.to_csv(os.path.join(args.output_dir, 'pred_results.csv'))
 
 
-def train(model, linear_classifiers, optimizers, loader, epoch, n, avgpool, ftr_CLASSES, class_weights=None):
+def train(model, linear_classifiers_ftr, linear_classifier, optimizers_ftr, optimizer, loader, epoch, n, avgpool, ftr_CLASSES, class_weights=None):
     for fk in ftr_CLASSES.keys():
-        linear_classifiers[fk].train()
+        linear_classifiers_ftr[fk].train()
+    linear_classifier.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     for fk in ftr_CLASSES.keys():
         metric_logger.add_meter(f'lr_{fk}', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
+    metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     if class_weights:
         criterion_ftr = {fk:nn.CrossEntropyLoss(weight=class_weights[fk].float().cuda(non_blocking=True)) for fk in ftr_CLASSES.keys()}
     header = 'Epoch: [{}]'.format(epoch)
@@ -262,8 +319,11 @@ def train(model, linear_classifiers, optimizers, loader, epoch, n, avgpool, ftr_
             else:
                 output = model(inp)
                 
+        # concatenate EMBD and FTRs as input for linear_classifier
+        output_catted = output
         for fk in ftr_CLASSES.keys():
-            output_f = linear_classifiers[fk](output)
+            output_f = linear_classifiers_ftr[fk](output)
+            output_catted = torch.cat((output_catted, output_f), dim=-1)
 
             # compute cross entropy loss
             if class_weights:
@@ -272,18 +332,32 @@ def train(model, linear_classifiers, optimizers, loader, epoch, n, avgpool, ftr_
                 loss = nn.CrossEntropyLoss()(output_f, target_ftrs[fk])
 
             # compute the gradients
-            optimizers[fk].zero_grad()
-            loss.backward()
+            optimizers_ftr[fk].zero_grad()
+            loss.backward(retain_graph=True)
 
             # step
-            optimizers[fk].step()
+            optimizers_ftr[fk].step()
 
             # log 
             torch.cuda.synchronize()
             # metric_logger.update(loss_f=loss.item())
             metric_logger.meters[f'loss_{fk}'].update(loss.item())
-            # metric_logger.update(lr_f=optimizers[fk].param_groups[0]["lr"])
-            metric_logger.meters[f'lr_{fk}'].update(optimizers[fk].param_groups[0]["lr"])
+            # metric_logger.update(lr_f=optimizers_ftr[fk].param_groups[0]["lr"])
+            metric_logger.meters[f'lr_{fk}'].update(optimizers_ftr[fk].param_groups[0]["lr"])
+
+        output_cls = linear_classifier(output_catted)
+        loss_cls = nn.CrossEntropyLoss()(output_cls, target)
+        # compute the gradients
+        optimizer.zero_grad()
+        loss_cls.backward()
+
+        # step
+        optimizer.step()
+
+        # log 
+        torch.cuda.synchronize()
+        metric_logger.update(loss=loss_cls.item())
+        metric_logger.update(lr=optimizer.param_groups[0]["lr"])
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
@@ -291,9 +365,10 @@ def train(model, linear_classifiers, optimizers, loader, epoch, n, avgpool, ftr_
 
 
 @torch.no_grad()
-def validate_network(val_loader, model, linear_classifiers, n, avgpool, ftr_CLASSES):
+def validate_network(val_loader, model, linear_classifiers_ftr, linear_classifier, n, avgpool, ftr_CLASSES):
     for fk in ftr_CLASSES.keys():
-        linear_classifiers[fk].eval()
+        linear_classifiers_ftr[fk].eval()
+    linear_classifier.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
     for sample in metric_logger.log_every(val_loader, 20, header):
@@ -302,6 +377,7 @@ def validate_network(val_loader, model, linear_classifiers, n, avgpool, ftr_CLAS
         # target = target.cuda(non_blocking=True)
         inp, target, img_ftr_ids, image_id, img_expl = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
         target_ftrs = {fk:v.long().cuda(non_blocking=True) for fk, v in img_ftr_ids.items()}
+        batch_size = inp.shape[0]
 
         # forward
         with torch.no_grad():
@@ -314,25 +390,48 @@ def validate_network(val_loader, model, linear_classifiers, n, avgpool, ftr_CLAS
             else:
                 output = model(inp)
                 
+        # concatenate EMBD and FTRs as input for linear_classifier
+        output_catted = output
         for fk in ftr_CLASSES.keys():
-            output_f = linear_classifiers[fk](output)
+            output_f = linear_classifiers_ftr[fk](output)
+            output_catted = torch.cat((output_catted, output_f), dim=-1)
             loss = nn.CrossEntropyLoss()(output_f, target_ftrs[fk])
 
             acc1, = utils.accuracy(output_f, target_ftrs[fk], topk=(1,), near=1)
 
-            batch_size = inp.shape[0]
             # metric_logger.update(loss_f=loss.item())
             metric_logger.meters[f'loss_{fk}'].update(loss.item())
             metric_logger.meters[f'acc1_{fk}'].update(acc1.item(), n=batch_size)
+        
+        output_cls = linear_classifier(output_catted)
+        loss_cls = nn.CrossEntropyLoss()(output_cls, target)
+
+        if linear_classifier.module.num_labels >= 5:
+            acc1, acc5 = utils.accuracy(output_cls, target, topk=(1, 5))
+        else:
+            acc1, = utils.accuracy(output_cls, target, topk=(1,))
+
+        metric_logger.update(loss=loss_cls.item())
+        metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
+        if linear_classifier.module.num_labels >= 5:
+            metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+
     for fk in ftr_CLASSES.keys():
         print('* Acc@1 {top1.global_avg:.3f} loss {losses.global_avg:.3f} -- {fk}'
             .format(top1=metric_logger.meters[f'acc1_{fk}'], losses=metric_logger.meters[f'loss_{fk}'], fk=fk))
+    if linear_classifier.module.num_labels >= 5:
+        print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
+          .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
+    else:
+        print('* Acc@1 {top1.global_avg:.3f} loss {losses.global_avg:.3f}'
+          .format(top1=metric_logger.acc1, losses=metric_logger.loss))
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 @torch.no_grad()
-def write_results(valset, model, linear_classifiers, n, avgpool, ftr_CLASSES):
+def write_results(valset, model, linear_classifiers_ftr, linear_classifier, n, avgpool, ftr_CLASSES):
     for fk in ftr_CLASSES.keys():
-        linear_classifiers[fk].eval()
+        linear_classifiers_ftr[fk].eval()
+    linear_classifier.eval()
     test_loader = torch.utils.data.DataLoader(valset, shuffle=False, batch_size=valset.__len__(), pin_memory=True, num_workers=args.num_workers)
     dataiter = iter(test_loader)
     sample = dataiter.next()
@@ -347,7 +446,10 @@ def write_results(valset, model, linear_classifiers, n, avgpool, ftr_CLASSES):
                 output = output.reshape(output.shape[0], -1)
         else:
             output = model(inp)
-    
+
+    # concatenate EMBD and FTRs as input for linear_classifier
+    output_catted = output
+
     header = [
         'img_id', 
         'gt_subtlety', 'gt_internalStructure', 'gt_calcification', 'gt_sphericity', 'gt_margin', 'gt_lobulation', 'gt_spiculation', 'gt_texture', 'gt_malignancy',
@@ -356,11 +458,19 @@ def write_results(valset, model, linear_classifiers, n, avgpool, ftr_CLASSES):
     df = pd.DataFrame(columns=header)
     df['img_id'] = image_id
 
+    # predict FTRs
     for fk in ftr_CLASSES.keys():
-        output_f = linear_classifiers[fk](output)
+        output_f = linear_classifiers_ftr[fk](output)
+        output_catted = torch.cat((output_catted, output_f), dim=-1)
         _, pred = torch.max(output_f.data, 1)
         df[f'gt_{fk}'] = target_ftrs[fk]
         df[f'pd_{fk}'] = pred.cpu()
+
+    # predict CLS
+    output_cls = linear_classifier(output_catted)
+    _, pred_cls = torch.max(output_cls.data, 1)
+    df['gt_malignancy'] = target.cpu()
+    df['pd_malignancy'] = pred_cls.cpu()
     
     return df
 
@@ -406,7 +516,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', default=10, type=int, help='Number of data loading workers per GPU.')
     parser.add_argument('--val_freq', default=1, type=int, help="Epoch frequency for validation.")
     parser.add_argument('--output_dir', default="./logs", help='Path to save logs and checkpoints')
-    # parser.add_argument('--num_labels', default=2, type=int, help='Number of labels for linear classifier')
+    parser.add_argument('--num_labels', default=2, type=int, help='Number of labels for linear classifier')
     parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
     parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
     args = parser.parse_args()
