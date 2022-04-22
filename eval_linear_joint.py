@@ -458,6 +458,8 @@ def write_results(valset, model, linear_classifiers_ftr, linear_classifier, n, a
     df = pd.DataFrame(columns=header)
     df['img_id'] = image_id
 
+    df = pd.concat([df, pd.DataFrame(output.cpu().numpy())], axis=1)
+
     # predict FTRs
     for fk in ftr_CLASSES.keys():
         output_f = linear_classifiers_ftr[fk](output)
