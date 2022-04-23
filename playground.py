@@ -20,6 +20,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 import utils
 import vision_transformer as vits
@@ -98,5 +99,10 @@ plt.hist(correctFTRs_wrong, bins=np.arange(-0.5, 9.5), density=True, alpha=0.4, 
 # %%
 # plot t-SNE of learned EMBDs
 plt.figure(figsize=(8, 8))
-plt.scatter(df_right['embd_tsne_dim0'], df_right['embd_tsne_dim1'], alpha=0.4, color='tab:green');
-plt.scatter(df_wrong['embd_tsne_dim0'], df_wrong['embd_tsne_dim1'], alpha=0.4, color='tab:red');
+plt.scatter(df[df.pd_malignancy == 0]['embd_tsne_dim0'], df[df.pd_malignancy == 0]['embd_tsne_dim1'], alpha=0.4, color='tab:blue');
+plt.scatter(df[df.pd_malignancy == 1]['embd_tsne_dim0'], df[df.pd_malignancy == 1]['embd_tsne_dim1'], alpha=0.4, color='tab:orange');
+
+# %%
+sns.set_theme(style="white", palette=None) # palette='viridis'
+fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue='gt_malignancy', kind='scatter', palette='flare', alpha=0.6, s=40)
+plt.savefig(f"{os.path.join(output_dir, 'embd_tsne.png')}", bbox_inches='tight', dpi=300)
