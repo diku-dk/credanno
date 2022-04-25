@@ -103,6 +103,26 @@ plt.scatter(df[df.pd_malignancy == 0]['embd_tsne_dim0'], df[df.pd_malignancy == 
 plt.scatter(df[df.pd_malignancy == 1]['embd_tsne_dim0'], df[df.pd_malignancy == 1]['embd_tsne_dim1'], alpha=0.4, color='tab:orange');
 
 # %%
-sns.set_theme(style="white", palette=None) # palette='viridis'
-fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue='gt_malignancy', kind='scatter', palette='flare', alpha=0.6, s=40)
-plt.savefig(f"{os.path.join(output_dir, 'embd_tsne.png')}", bbox_inches='tight', dpi=300)
+legend_dict = {
+    'subtlety':['Extremely Subtle', 'Moderately Subtle', 'Fairly Subtle', 'Moderately Obvious', 'Obvious'],
+    'internalStructure':['Soft Tissue', 'Fluid', 'Fat', 'Air'],
+    'calcification':[#'Popcorn', 'Laminated', 
+        'Solid', 'Non-central', 'Central', 'Absent',],
+    'sphericity':[#'Linear', 
+        'Ovoid/Linear', 'Ovoid', 'Ovoid/Round', 'Round'],
+    'margin':['Poorly Defined', 'Near Poorly Defined', 'Medium Margin', 'Near Sharp', 'Sharp'],
+    'lobulation':['No Lobulation', 'Nearly No Lobulation', 'Medium Lobulation', 'Near Marked Lobulation', 'Marked Lobulation'],
+    'spiculation':['No Spiculation', 'Nearly No Spiculation', 'Medium Spiculation', 'Near Marked Spiculation', 'Marked Spiculation'],
+    'texture':['Non-Solid/GGO', 'Non-Solid/Mixed', 'Part Solid/Mixed', 'Solid/Mixed', 'Solid'],
+    'malignancy':['Unlikely', 'Suspicious'],
+}
+# %%
+for task, d in legend_dict.items():
+    sns.set_theme(style="white", palette=None) # palette='viridis'
+    if task == 'malignancy':
+        fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue=f'gt_{task}', kind='scatter', palette=[sns.color_palette("flare", as_cmap=True).colors[30], sns.color_palette("flare", as_cmap=True).colors[-30]], alpha=0.6, s=40)
+    else:
+        fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue=f'gt_{task}', kind='scatter', palette='flare', alpha=0.6, s=40)
+    handles, labels = fig.ax_joint.get_legend_handles_labels()
+    fig.ax_joint.legend(handles=handles, labels=d, title=task.capitalize())
+    plt.savefig(f"{os.path.join(output_dir, f'embd_tsne_{task}.png')}", bbox_inches='tight', dpi=300)
