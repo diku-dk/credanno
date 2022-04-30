@@ -104,6 +104,7 @@ plt.scatter(df[df.pd_malignancy == 1]['embd_tsne_dim0'], df[df.pd_malignancy == 
 
 # %%
 legend_dict = {
+    'malignancy':['Unlikely', 'Suspicious'],
     'subtlety':['Extremely Subtle', 'Moderately Subtle', 'Fairly Subtle', 'Moderately Obvious', 'Obvious'],
     'internalStructure':['Soft Tissue', 'Fluid', 'Fat', 'Air'],
     'calcification':[#'Popcorn', 'Laminated', 
@@ -114,15 +115,14 @@ legend_dict = {
     'lobulation':['No Lobulation', 'Nearly No Lobulation', 'Medium Lobulation', 'Near Marked Lobulation', 'Marked Lobulation'],
     'spiculation':['No Spiculation', 'Nearly No Spiculation', 'Medium Spiculation', 'Near Marked Spiculation', 'Marked Spiculation'],
     'texture':['Non-Solid/GGO', 'Non-Solid/Mixed', 'Part Solid/Mixed', 'Solid/Mixed', 'Solid'],
-    'malignancy':['Unlikely', 'Suspicious'],
 }
 # %%
 for task, d in legend_dict.items():
     sns.set_theme(style="white", palette=None) # palette='viridis'
     if task == 'malignancy':
-        fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue=f'gt_{task}', kind='scatter', palette=[sns.color_palette("flare", as_cmap=True).colors[30], sns.color_palette("flare", as_cmap=True).colors[-30]], alpha=0.6, s=40)
+        fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue=f'gt_{task}', kind='scatter', xlim=(-105, 85), ylim=(-85, 95), palette=[sns.color_palette("flare", as_cmap=True).colors[30], sns.color_palette("flare", as_cmap=True).colors[-30]], alpha=0.6, s=40)
     else:
-        fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue=f'gt_{task}', kind='scatter', palette='flare', alpha=0.6, s=40)
+        fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue=f'gt_{task}', kind='scatter', xlim=(-105, 85), ylim=(-85, 95), palette='flare', alpha=0.6, s=40)
     handles, labels = fig.ax_joint.get_legend_handles_labels()
-    fig.ax_joint.legend(handles=handles, labels=d, title=task.capitalize())
+    fig.ax_joint.legend(handles=handles, labels=d, title=task.capitalize(), loc='upper left')
     plt.savefig(f"{os.path.join(output_dir, f'embd_tsne_{task}.png')}", bbox_inches='tight', dpi=300)
