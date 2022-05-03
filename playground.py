@@ -116,7 +116,7 @@ legend_dict = {
     'spiculation':['No Spiculation', 'Nearly No Spiculation', 'Medium Spiculation', 'Near Marked Spiculation', 'Marked Spiculation'],
     'texture':['Non-Solid/GGO', 'Non-Solid/Mixed', 'Part Solid/Mixed', 'Solid/Mixed', 'Solid'],
 }
-# %%
+# %% Save plots
 for task, d in legend_dict.items():
     sns.set_theme(style="white", palette=None) # palette='viridis'
     if task == 'malignancy':
@@ -126,3 +126,23 @@ for task, d in legend_dict.items():
     handles, labels = fig.ax_joint.get_legend_handles_labels()
     fig.ax_joint.legend(handles=handles, labels=d, title=task.capitalize(), loc='upper left')
     plt.savefig(f"{os.path.join(output_dir, f'embd_tsne_{task}.png')}", bbox_inches='tight', dpi=300)
+
+# %% Get transformed sample image for illustration
+from main_dino import DataAugmentationDINO
+from PIL import Image
+from torchvision.utils import save_image
+
+def pil_loader(path: str) -> Image.Image:
+    # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
+    with open(path, 'rb') as f:
+        img = Image.open(f)
+        return img.convert('RGB')
+
+img_path = '/DATA/lu/datasets/LIDC_IDRI/imagenet_2d_ann/Image/train/1/LIDC-IDRI-0014_s25_ann216_n00.png'
+img = pil_loader(img_path)
+transform = DataAugmentationDINO(global_crops_scale=(0.4, 1.), local_crops_scale=(0.05, 0.4), local_crops_number=8)
+img_transformed = transform(img)
+
+save_image(img_transformed[1], './logs/LIDC-IDRI-0014_s25_ann216_n00_aug.png')
+# save_image(img_transformed[:2], './logs/LIDC-IDRI-0014_s25_ann216_n00_augs.png')
+# save_image(img_transformed[2:], './logs/LIDC-IDRI-0014_s25_ann216_n00_aug_local.png')
