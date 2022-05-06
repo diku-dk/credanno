@@ -176,7 +176,7 @@ def knn_classifier(train_features, train_labels, train_ftrs_labels: dict, test_f
         top1_ftrs[fk], top5_ftrs[fk], total_ftrs[fk] = 0.0, 0.0, 0
 
     train_features = train_features.t()
-    num_test_images, num_chunks = test_labels.shape[0], 100
+    num_test_images, num_chunks = test_labels.shape[0], 10
     imgs_per_chunk = num_test_images // num_chunks
     retrieval_one_hot = torch.zeros(k, num_classes).to(train_features.device)
     for idx in range(0, num_test_images, imgs_per_chunk):
@@ -212,7 +212,7 @@ def knn_classifier(train_features, train_labels, train_ftrs_labels: dict, test_f
             _, predictions_ftr = probs_ftr.sort(1, True)
 
             # find the predictions_ftr that match the target
-            correct_ftr = predictions_ftr.eq(targets_ftr.data.view(-1, 1))
+            correct_ftr = abs(predictions_ftr - targets_ftr.data.view(-1, 1)) <= 1
             top1_ftrs[fk] = top1_ftrs[fk] + correct_ftr.narrow(1, 0, 1).sum().item()
             if num_ftr_classes > 5:
                 top5_ftrs[fk] = top5_ftrs[fk] + correct_ftr.narrow(1, 0, min(5, k)).sum().item()  # top5 does not make sense if k < 5
@@ -282,9 +282,9 @@ if __name__ == '__main__':
     parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
     args = parser.parse_args()
 
-    # for debugging
-    args.pretrained_weights = './logs/vits16_pretrain_full_2d_ann/checkpoint.pth'
-    args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
+    # # for debugging
+    # args.pretrained_weights = './logs/vits16_pretrain_full_2d_ann/checkpoint.pth'
+    # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
 
     utils.init_distributed_mode(args)
     print("git:\n  {}\n".format(utils.get_sha()))
