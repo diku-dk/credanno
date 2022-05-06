@@ -190,6 +190,11 @@ def train_dino(args):
         teacher,
         DINOHead(embed_dim, args.out_dim, args.use_bn_in_head),
     )
+    if args.arch in torchvision_models.__dict__.keys():
+        student = utils.MultiCropWrapper(student, DINOHead(
+            embed_dim, args.out_dim, use_bn=True, norm_last_layer=True, nlayers=2, hidden_dim=4096, bottleneck_dim=256))
+        teacher = utils.MultiCropWrapper(teacher, DINOHead(
+            embed_dim, args.out_dim, use_bn=True, norm_last_layer=True, nlayers=2, hidden_dim=4096, bottleneck_dim=256))
     # move networks to gpu
     student, teacher = student.cuda(), teacher.cuda()
     # synchronize batch norms (if any)

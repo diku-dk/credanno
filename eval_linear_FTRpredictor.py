@@ -248,7 +248,7 @@ def train(model, linear_classifiers, optimizers, loader, epoch, n, avgpool, ftr_
         # move to gpu
         # inp = inp.cuda(non_blocking=True)
         # target = target.cuda(non_blocking=True)
-        inp, target, img_ftr_ids, image_id, img_expl = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
+        inp, target, img_ftr_ids, image_id, img_expl, idx = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
         target_ftrs = {fk:v.long().cuda(non_blocking=True) for fk, v in img_ftr_ids.items()}
 
         # forward
@@ -300,7 +300,7 @@ def validate_network(val_loader, model, linear_classifiers, n, avgpool, ftr_CLAS
         # move to gpu
         # inp = inp.cuda(non_blocking=True)
         # target = target.cuda(non_blocking=True)
-        inp, target, img_ftr_ids, image_id, img_expl = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
+        inp, target, img_ftr_ids, image_id, img_expl, idx = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
         target_ftrs = {fk:v.long().cuda(non_blocking=True) for fk, v in img_ftr_ids.items()}
 
         # forward
@@ -336,7 +336,7 @@ def write_results(valset, model, linear_classifiers, n, avgpool, ftr_CLASSES):
     test_loader = torch.utils.data.DataLoader(valset, shuffle=False, batch_size=valset.__len__(), pin_memory=True, num_workers=args.num_workers)
     dataiter = iter(test_loader)
     sample = dataiter.next()
-    inp, target, img_ftr_ids, image_id, img_expl = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
+    inp, target, img_ftr_ids, image_id, img_expl, idx = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
     target_ftrs = {fk:v.long().cpu() for fk, v in img_ftr_ids.items()}
     with torch.no_grad():
         if "vit" in args.arch:

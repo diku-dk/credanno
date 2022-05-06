@@ -38,7 +38,7 @@ class RandomRotation:
 
 
 class LIDC_IDRI_EXPL(torch.utils.data.Dataset):
-    def __init__(self, base_path, split, stats=None, verbose=False, agg=True):
+    def __init__(self, base_path, split, stats=None, verbose=False, agg=True, transform=None):
         assert split in {"train", "val", "test"}
         self.base_path = base_path
         self.split = "val" if split == "test" else split
@@ -71,48 +71,50 @@ class LIDC_IDRI_EXPL(torch.utils.data.Dataset):
             self.img_ids, self.img_class_ids, self.img_ftr_ids, self.scenes, self.fnames = \
                 self.prepare_scenes(df)
 
-
-        # if split == "train":
-        #     transform_list = [
-        #         transforms.Resize((32, 32)),
-        #         transforms.RandomHorizontalFlip(),
-        #         transforms.RandomVerticalFlip(),
-        #         # RandomRotation(angles=[0, 90, 180, 270]),
-        #         transforms.GaussianBlur(kernel_size=1),
-        #     ]
-        # else:
-        #     transform_list = [
-        #         transforms.Resize((32, 32)),
-        #     ]
-
-        if split == "train":
-            transform_list = [
-                transforms.RandomResizedCrop(224),
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomVerticalFlip(),
-                RandomRotation(angles=[0, 90, 180, 270]),
-                # transforms.RandomPerspective(distortion_scale=0.1, p=0.5),
-                transforms.GaussianBlur(kernel_size=1),
-            ]
+        if transform is not None:
+            self.transform = transform
         else:
-            transform_list = [
-                transforms.Resize(256, interpolation=3),
-                transforms.CenterCrop(224),
-            ]
-            '''
-            inverse_modes_mapping = {
-                0: InterpolationMode.NEAREST,
-                2: InterpolationMode.BILINEAR,
-                3: InterpolationMode.BICUBIC,
-                4: InterpolationMode.BOX,
-                5: InterpolationMode.HAMMING,
-                1: InterpolationMode.LANCZOS,
-            }
-            '''
-        transform_list.append(transforms.ToTensor())
-        if stats is not None:
-            transform_list.append(transforms.Normalize(*stats))
-        self.transform = transforms.Compose(transform_list)
+            # if split == "train":
+            #     transform_list = [
+            #         transforms.Resize((32, 32)),
+            #         transforms.RandomHorizontalFlip(),
+            #         transforms.RandomVerticalFlip(),
+            #         # RandomRotation(angles=[0, 90, 180, 270]),
+            #         transforms.GaussianBlur(kernel_size=1),
+            #     ]
+            # else:
+            #     transform_list = [
+            #         transforms.Resize((32, 32)),
+            #     ]
+
+            if split == "train":
+                transform_list = [
+                    transforms.RandomResizedCrop(224),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    RandomRotation(angles=[0, 90, 180, 270]),
+                    # transforms.RandomPerspective(distortion_scale=0.1, p=0.5),
+                    transforms.GaussianBlur(kernel_size=1),
+                ]
+            else:
+                transform_list = [
+                    transforms.Resize(256, interpolation=3),
+                    transforms.CenterCrop(224),
+                ]
+                '''
+                inverse_modes_mapping = {
+                    0: InterpolationMode.NEAREST,
+                    2: InterpolationMode.BILINEAR,
+                    3: InterpolationMode.BICUBIC,
+                    4: InterpolationMode.BOX,
+                    5: InterpolationMode.HAMMING,
+                    1: InterpolationMode.LANCZOS,
+                }
+                '''
+            transform_list.append(transforms.ToTensor())
+            if stats is not None:
+                transform_list.append(transforms.Normalize(*stats))
+            self.transform = transforms.Compose(transform_list)
 
         self.n_classes = len(np.unique(self.img_class_ids, axis=0))
 
@@ -176,7 +178,7 @@ class LIDC_IDRI_EXPL(torch.utils.data.Dataset):
         # remove objects presence indicator from gt table
         # objects = objects[:, 1:]
 
-        return image, img_class_id, img_ftr_id, image_id, img_expl
+        return image, img_class_id, img_ftr_id, image_id, img_expl, idx
 
     def __len__(self):
         return len(self.fnames)

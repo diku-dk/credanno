@@ -14,6 +14,7 @@
 import os
 import sys
 import argparse
+import random
 
 import torch
 from torch import nn
@@ -25,9 +26,25 @@ from torchvision import models as torchvision_models
 
 import utils
 import vision_transformer as vits
+import data_LIDC_IDRI as data
 
+ftr_CLASSES = {
+    "subtlety": [1, 2, 3, 4, 5],
+    "internalStructure": [1, 2, 3, 4], # 2, 3, never appeared
+    "calcification": [1, 2, 3, 4, 5, 6], # 1, never appeared
+    "sphericity": [1, 2, 3, 4, 5], # 1, never appeared
+    "margin": [1, 2, 3, 4, 5],
+    "lobulation": [1, 2, 3, 4, 5], 
+    "spiculation": [1, 2, 3, 4, 5],
+    "texture": [1, 2, 3, 4, 5],
+    # "malignancy": [1, 2, 3, 4, 5],
+}
 
 def extract_feature_pipeline(args):
+    aggregate_labels = True
+    stats = ((0.2281477451324463, 0.2281477451324463, 0.2281477451324463), (0.25145936012268066, 0.25145936012268066, 0.25145936012268066))
+    utils.seed_everything(42)
+    
     # ============ preparing data ... ============
     transform = pth_transforms.Compose([
         pth_transforms.Resize(256, interpolation=3),
@@ -37,8 +54,12 @@ def extract_feature_pipeline(args):
         # pth_transforms.Normalize((-0.5236307382583618, -0.5236307382583618, -0.5236307382583618), (0.5124182105064392, 0.5124182105064392, 0.5124182105064392)),
         pth_transforms.Normalize((0.2281477451324463, 0.2281477451324463, 0.2281477451324463), (0.25145936012268066, 0.25145936012268066, 0.25145936012268066)),
     ])
-    dataset_train = ReturnIndexDataset(os.path.join(args.data_path, "train"), transform=transform)
-    dataset_val = ReturnIndexDataset(os.path.join(args.data_path, "val"), transform=transform)
+    # dataset_train = ReturnIndexDataset(os.path.join(args.data_path, "train"), transform=transform)
+    dataset_train = data.LIDC_IDRI_EXPL(args.data_path, "train", stats=stats, agg=aggregate_labels)
+    indices = random.choices(range(len(dataset_train)), k=round(args.label_frac * len(dataset_train)), weights=None)
+    dataset_train = torch.utils.data.Subset(dataset_train, indices)
+    # dataset_val = ReturnIndexDataset(os.path.join(args.data_path, "val"), transform=transform)
+    dataset_val = data.LIDC_IDRI_EXPL(args.data_path, "val", stats=stats, agg=aggregate_labels)
     sampler = torch.utils.data.DistributedSampler(dataset_train, shuffle=False)
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train,
@@ -83,24 +104,30 @@ def extract_feature_pipeline(args):
         train_features = nn.functional.normalize(train_features, dim=1, p=2)
         test_features = nn.functional.normalize(test_features, dim=1, p=2)
 
-    train_labels = torch.tensor([s[-1] for s in dataset_train.samples]).long()
-    test_labels = torch.tensor([s[-1] for s in dataset_val.samples]).long()
+    # train_labels = torch.tensor([s[-1] for s in dataset_train.samples]).long()
+    # test_labels = torch.tensor([s[-1] for s in dataset_val.samples]).long()
+    train_labels = torch.tensor(dataset_train.dataset.img_class_ids).long()
+    test_labels = torch.tensor(dataset_val.img_class_ids).long()
+    train_ftrs_labels = {fk: torch.tensor([dic[fk] for dic in dataset_train.dataset.img_ftr_ids]).long() for fk in dataset_train.dataset.img_ftr_ids[0].keys()}
+    test_ftrs_labels = {fk: torch.tensor([dic[fk] for dic in dataset_val.img_ftr_ids]).long() for fk in dataset_val.img_ftr_ids[0].keys()}
+
     # save features and labels
     if args.dump_features and dist.get_rank() == 0:
         torch.save(train_features.cpu(), os.path.join(args.dump_features, "trainfeat.pth"))
         torch.save(test_features.cpu(), os.path.join(args.dump_features, "testfeat.pth"))
         torch.save(train_labels.cpu(), os.path.join(args.dump_features, "trainlabels.pth"))
         torch.save(test_labels.cpu(), os.path.join(args.dump_features, "testlabels.pth"))
-    return train_features, test_features, train_labels, test_labels
+    return train_features, train_labels, train_ftrs_labels, test_features, test_labels, test_ftrs_labels
 
 
 @torch.no_grad()
 def extract_features(model, data_loader, use_cuda=True, multiscale=False):
     metric_logger = utils.MetricLogger(delimiter="  ")
     features = None
-    for samples, index in metric_logger.log_every(data_loader, 10):
-        samples = samples.cuda(non_blocking=True)
-        index = index.cuda(non_blocking=True)
+    for sample in metric_logger.log_every(data_loader, 10):
+        # samples = samples.cuda(non_blocking=True)
+        # index = index.cuda(non_blocking=True)
+        samples, target, img_ftr_ids, image_id, img_expl, index = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
         if multiscale:
             feats = utils.multi_scale(samples, model)
         else:
@@ -142,19 +169,54 @@ def extract_features(model, data_loader, use_cuda=True, multiscale=False):
 
 
 @torch.no_grad()
-def knn_classifier(train_features, train_labels, test_features, test_labels, k, T, num_classes=1000):
+def knn_classifier(train_features, train_labels, train_ftrs_labels: dict, test_features, test_labels, test_ftrs_labels: dict, k, T, num_classes=1000):
     top1, top5, total = 0.0, 0.0, 0
+    top1_ftrs, top5_ftrs, total_ftrs = {}, {}, {}
+    for fk in train_ftrs_labels.keys():
+        top1_ftrs[fk], top5_ftrs[fk], total_ftrs[fk] = 0.0, 0.0, 0
+
     train_features = train_features.t()
     num_test_images, num_chunks = test_labels.shape[0], 100
     imgs_per_chunk = num_test_images // num_chunks
     retrieval_one_hot = torch.zeros(k, num_classes).to(train_features.device)
     for idx in range(0, num_test_images, imgs_per_chunk):
-        # get the features for test images
+        # get the cls features for test images
         features = test_features[
             idx : min((idx + imgs_per_chunk), num_test_images), :
         ]
         targets = test_labels[idx : min((idx + imgs_per_chunk), num_test_images)]
         batch_size = targets.shape[0]
+
+        # calculate the dot product and compute top-k neighbors
+        similarity = torch.mm(features, train_features)
+        distances, indices = similarity.topk(k, largest=True, sorted=True)
+
+        for fk in train_ftrs_labels.keys():
+            num_ftr_classes = len(ftr_CLASSES[fk])
+            retrieval_one_hot_ftr = torch.zeros(k, num_ftr_classes).to(train_features.device)
+            targets_ftr = test_ftrs_labels[fk][idx : min((idx + imgs_per_chunk), num_test_images)]
+
+            candidates_ftr = train_ftrs_labels[fk].view(1, -1).expand(batch_size, -1)
+            retrieved_neighbors_ftr = torch.gather(candidates_ftr, 1, indices)
+
+            retrieval_one_hot_ftr.resize_(batch_size * k, num_ftr_classes).zero_()
+            retrieval_one_hot_ftr.scatter_(1, retrieved_neighbors_ftr.view(-1, 1), 1)
+            distances_transform_ftr = distances.clone().div_(T).exp_()
+            probs_ftr = torch.sum(
+                torch.mul(
+                    retrieval_one_hot_ftr.view(batch_size, -1, num_ftr_classes),
+                    distances_transform_ftr.view(batch_size, -1, 1),
+                ),
+                1,
+            )
+            _, predictions_ftr = probs_ftr.sort(1, True)
+
+            # find the predictions_ftr that match the target
+            correct_ftr = predictions_ftr.eq(targets_ftr.data.view(-1, 1))
+            top1_ftrs[fk] = top1_ftrs[fk] + correct_ftr.narrow(1, 0, 1).sum().item()
+            if num_ftr_classes > 5:
+                top5_ftrs[fk] = top5_ftrs[fk] + correct_ftr.narrow(1, 0, min(5, k)).sum().item()  # top5 does not make sense if k < 5
+            total_ftrs[fk] += targets_ftr.size(0)
 
         # calculate the dot product and compute top-k neighbors
         similarity = torch.mm(features, train_features)
@@ -182,7 +244,10 @@ def knn_classifier(train_features, train_labels, test_features, test_labels, k, 
         total += targets.size(0)
     top1 = top1 * 100.0 / total
     top5 = top5 * 100.0 / total
-    return top1, top5
+    for fk in train_ftrs_labels.keys():
+        top1_ftrs[fk] = top1_ftrs[fk] * 100.0 / total_ftrs[fk]
+        top5_ftrs[fk] = top5_ftrs[fk] * 100.0 / total_ftrs[fk]
+    return top1, top5, top1_ftrs, top5_ftrs
 
 
 class ReturnIndexDataset(datasets.ImageFolder):
@@ -214,7 +279,12 @@ if __name__ == '__main__':
         distributed training; see https://pytorch.org/docs/stable/distributed.html""")
     parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
     parser.add_argument('--data_path', default='/path/to/imagenet/', type=str)
+    parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
     args = parser.parse_args()
+
+    # for debugging
+    args.pretrained_weights = './logs/vits16_pretrain_full_2d_ann/checkpoint.pth'
+    args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
 
     utils.init_distributed_mode(args)
     print("git:\n  {}\n".format(utils.get_sha()))
@@ -228,7 +298,7 @@ if __name__ == '__main__':
         test_labels = torch.load(os.path.join(args.load_features, "testlabels.pth"))
     else:
         # need to extract features !
-        train_features, test_features, train_labels, test_labels = extract_feature_pipeline(args)
+        train_features, train_labels, train_ftrs_labels, test_features, test_labels, test_ftrs_labels = extract_feature_pipeline(args)
 
     if utils.get_rank() == 0:
         if args.use_cuda:
@@ -236,10 +306,15 @@ if __name__ == '__main__':
             test_features = test_features.cuda()
             train_labels = train_labels.cuda()
             test_labels = test_labels.cuda()
+            train_ftrs_labels = {fk: v.cuda() for fk, v in train_ftrs_labels.items()}
+            test_ftrs_labels = {fk: v.cuda() for fk, v in test_ftrs_labels.items()}
 
         print("Features are ready!\nStart the k-NN classification.")
         for k in args.nb_knn:
-            top1, top5 = knn_classifier(train_features, train_labels,
-                test_features, test_labels, k, args.temperature, num_classes=2)
-            print(f"{k}-NN classifier result: Top1: {top1}, Top5: {top5}")
+            top1, top5, top1_ftrs, top5_ftrs = knn_classifier(train_features, train_labels, train_ftrs_labels, 
+                test_features, test_labels, test_ftrs_labels,
+                k, args.temperature, num_classes=2)
+            print(f"\n{k}-NN classifier result: Top1: {top1:.3f}, Top5: {top5:.3f}")
+            for fk in train_ftrs_labels.keys():
+                print(f'* Acc@1 {top1_ftrs[fk]:.3f} -- {fk}')
     dist.barrier()

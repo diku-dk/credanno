@@ -305,7 +305,7 @@ def train(model, linear_classifiers_ftr, linear_classifier, optimizers_ftr, opti
         # move to gpu
         # inp = inp.cuda(non_blocking=True)
         # target = target.cuda(non_blocking=True)
-        inp, target, img_ftr_ids, image_id, img_expl = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
+        inp, target, img_ftr_ids, image_id, img_expl, idx = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
         target_ftrs = {fk:v.long().cuda(non_blocking=True) for fk, v in img_ftr_ids.items()}
 
         # forward
@@ -375,7 +375,7 @@ def validate_network(val_loader, model, linear_classifiers_ftr, linear_classifie
         # move to gpu
         # inp = inp.cuda(non_blocking=True)
         # target = target.cuda(non_blocking=True)
-        inp, target, img_ftr_ids, image_id, img_expl = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
+        inp, target, img_ftr_ids, image_id, img_expl, idx = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
         target_ftrs = {fk:v.long().cuda(non_blocking=True) for fk, v in img_ftr_ids.items()}
         batch_size = inp.shape[0]
 
@@ -435,7 +435,7 @@ def write_results(valset, model, linear_classifiers_ftr, linear_classifier, n, a
     test_loader = torch.utils.data.DataLoader(valset, shuffle=False, batch_size=valset.__len__(), pin_memory=True, num_workers=args.num_workers)
     dataiter = iter(test_loader)
     sample = dataiter.next()
-    inp, target, img_ftr_ids, image_id, img_expl = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
+    inp, target, img_ftr_ids, image_id, img_expl, idx = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
     target_ftrs = {fk:v.long().cpu() for fk, v in img_ftr_ids.items()}
     with torch.no_grad():
         if "vit" in args.arch:
@@ -492,6 +492,31 @@ class LinearClassifier(nn.Module):
 
         # linear layer
         return self.linear(x)
+
+class Mlp(nn.Module):
+    """Multiple FC layers to train on top of frozen features"""
+    def __init__(self, dim, num_labels=2, act_layer=nn.ReLU, drop=0.5):
+        super().__init__()
+        self.num_labels = num_labels
+        self.fc1 = nn.Linear(dim, 512)
+        self.act1 = act_layer()
+        self.fc2 = nn.Linear(512, 256)
+        self.act2 = act_layer()
+        self.drop = nn.Dropout(drop)
+        self.linear = nn.Linear(256, num_labels)
+
+    def forward(self, x):
+        # flatten
+        x = x.view(x.size(0), -1)
+        # fc layers
+        x = self.fc1(x)
+        x = self.act1(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.act2(x)
+        x = self.drop(x)
+        x = self.linear(x)
+        return x
 
 
 if __name__ == '__main__':
