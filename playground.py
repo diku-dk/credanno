@@ -1,4 +1,5 @@
 # %% 
+from cProfile import label
 import os
 import argparse
 import json
@@ -146,3 +147,36 @@ img_transformed = transform(img)
 save_image(img_transformed[1], './logs/LIDC-IDRI-0014_s25_ann216_n00_aug.png')
 # save_image(img_transformed[:2], './logs/LIDC-IDRI-0014_s25_ann216_n00_augs.png')
 # save_image(img_transformed[2:], './logs/LIDC-IDRI-0014_s25_ann216_n00_aug_local.png')
+
+# %%
+# Annotation reduction plots
+dark = False
+output_dir = './logs/vits16_pretrain_full_2d_ann'
+df = pd.read_csv(f"{os.path.join(output_dir, 'results', 'anno_reduce.csv')}")
+
+if dark == True:
+    bg_color = '#181717'
+    plt.style.use(['ggplot','dark_background'])
+    plt.rcParams['axes.facecolor'] = '#212020'
+    plt.rcParams['figure.facecolor'] = bg_color
+    plt.rcParams['grid.color'] = bg_color
+    plt.rcParams['axes.edgecolor'] = bg_color
+    label_color = 'white'
+else:
+    plt.style.use('ggplot')
+    label_color = 'black'
+
+fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(10, 7), sharex='col', sharey='row')
+line1, = ax.plot(df['Annotation percentage'], df['Baseline'], label='Baseline', marker='o', markersize=12, alpha=0.8, c='#B84878')
+line2, = ax.plot(df['Annotation percentage'], df['MinAnno'], label='MinAnno', marker='X', markersize=12, alpha=0.8, c='#6CA0A3')
+ax.set_xscale('log')
+ax.invert_xaxis()
+# ax.set_xlim(1, 1e-2)
+ax.set_ylim(70, 90)
+ax.legend(handles=[line2, line1], fontsize='x-large', framealpha=0.4, loc='lower left')
+ax.set_xlabel('Percentage of annotations used', fontsize='x-large', color=label_color)
+ax.set_ylabel('Accuracy of malignancy prediction [%]', fontsize='x-large', color=label_color)
+ax.tick_params(labelsize='large')
+
+plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.png')}", format='png', dpi=300, bbox_inches='tight')
+plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.pdf')}", format='pdf', bbox_inches='tight')
