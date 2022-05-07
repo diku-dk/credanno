@@ -40,7 +40,6 @@ def eval_linear(args):
     # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
     # args.pretrained_weights = './logs/vits16_pretrain_full_2d_ann/checkpoint.pth'
 
-    # stats = ((-0.5186440944671631, -0.5186440944671631, -0.5186440944671631), (0.511863112449646, 0.511863112449646, 0.511863112449646))
     stats = ((0.2281477451324463, 0.2281477451324463, 0.2281477451324463), (0.25145936012268066, 0.25145936012268066, 0.25145936012268066))
     ftr_CLASSES = {
         "subtlety": [1, 2, 3, 4, 5],
@@ -97,14 +96,6 @@ def eval_linear(args):
 
     # ============ preparing data ... ============
     valset = data.LIDC_IDRI_EXPL(args.data_path, "val", stats=stats, agg=aggregate_labels)
-    # val_transform = pth_transforms.Compose([
-    #     pth_transforms.Resize(256, interpolation=3),
-    #     pth_transforms.CenterCrop(224),
-    #     pth_transforms.ToTensor(),
-    #     # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    #     pth_transforms.Normalize(*stats),
-    # ])
-    # dataset_val = datasets.ImageFolder(os.path.join(args.data_path, "val"), transform=val_transform)
     val_loader = torch.utils.data.DataLoader(
         valset,
         batch_size=args.batch_size_per_gpu,
@@ -126,14 +117,6 @@ def eval_linear(args):
     trainset = data.LIDC_IDRI_EXPL(args.data_path, "train", stats=stats, agg=aggregate_labels)
     indices = random.choices(range(len(trainset)), k=round(args.label_frac * len(trainset)), weights=None)
     trainset = torch.utils.data.Subset(trainset, indices)
-    # train_transform = pth_transforms.Compose([
-    #     pth_transforms.RandomResizedCrop(224),
-    #     pth_transforms.RandomHorizontalFlip(),
-    #     pth_transforms.ToTensor(),
-    #     # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    #     pth_transforms.Normalize(*stats),
-    # ])
-    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, "train"), transform=train_transform)
     sampler = torch.utils.data.distributed.DistributedSampler(trainset)
     train_loader = torch.utils.data.DataLoader(
         trainset,
@@ -303,8 +286,6 @@ def train(model, linear_classifiers_ftr, linear_classifier, optimizers_ftr, opti
     header = 'Epoch: [{}]'.format(epoch)
     for sample in metric_logger.log_every(loader, 20, header):
         # move to gpu
-        # inp = inp.cuda(non_blocking=True)
-        # target = target.cuda(non_blocking=True)
         inp, target, img_ftr_ids, image_id, img_expl, idx = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
         target_ftrs = {fk:v.long().cuda(non_blocking=True) for fk, v in img_ftr_ids.items()}
 
@@ -340,9 +321,7 @@ def train(model, linear_classifiers_ftr, linear_classifier, optimizers_ftr, opti
 
             # log 
             torch.cuda.synchronize()
-            # metric_logger.update(loss_f=loss.item())
             metric_logger.meters[f'loss_{fk}'].update(loss.item())
-            # metric_logger.update(lr_f=optimizers_ftr[fk].param_groups[0]["lr"])
             metric_logger.meters[f'lr_{fk}'].update(optimizers_ftr[fk].param_groups[0]["lr"])
 
         output_cls = linear_classifier(output_catted)
@@ -373,8 +352,6 @@ def validate_network(val_loader, model, linear_classifiers_ftr, linear_classifie
     header = 'Test:'
     for sample in metric_logger.log_every(val_loader, 20, header):
         # move to gpu
-        # inp = inp.cuda(non_blocking=True)
-        # target = target.cuda(non_blocking=True)
         inp, target, img_ftr_ids, image_id, img_expl, idx = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
         target_ftrs = {fk:v.long().cuda(non_blocking=True) for fk, v in img_ftr_ids.items()}
         batch_size = inp.shape[0]
@@ -399,7 +376,6 @@ def validate_network(val_loader, model, linear_classifiers_ftr, linear_classifie
 
             acc1, = utils.accuracy(output_f, target_ftrs[fk], topk=(1,), near=1)
 
-            # metric_logger.update(loss_f=loss.item())
             metric_logger.meters[f'loss_{fk}'].update(loss.item())
             metric_logger.meters[f'acc1_{fk}'].update(acc1.item(), n=batch_size)
         

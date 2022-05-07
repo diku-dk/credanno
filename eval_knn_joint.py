@@ -50,15 +50,11 @@ def extract_feature_pipeline(args):
         pth_transforms.Resize(256, interpolation=3),
         pth_transforms.CenterCrop(224),
         pth_transforms.ToTensor(),
-        # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        # pth_transforms.Normalize((-0.5236307382583618, -0.5236307382583618, -0.5236307382583618), (0.5124182105064392, 0.5124182105064392, 0.5124182105064392)),
-        pth_transforms.Normalize((0.2281477451324463, 0.2281477451324463, 0.2281477451324463), (0.25145936012268066, 0.25145936012268066, 0.25145936012268066)),
+        pth_transforms.Normalize(*stats),
     ])
-    # dataset_train = ReturnIndexDataset(os.path.join(args.data_path, "train"), transform=transform)
     dataset_train = data.LIDC_IDRI_EXPL(args.data_path, "train", stats=stats, agg=aggregate_labels)
     indices = random.choices(range(len(dataset_train)), k=round(args.label_frac * len(dataset_train)), weights=None)
     dataset_train = torch.utils.data.Subset(dataset_train, indices)
-    # dataset_val = ReturnIndexDataset(os.path.join(args.data_path, "val"), transform=transform)
     dataset_val = data.LIDC_IDRI_EXPL(args.data_path, "val", stats=stats, agg=aggregate_labels)
     sampler = torch.utils.data.DistributedSampler(dataset_train, shuffle=False)
     data_loader_train = torch.utils.data.DataLoader(
@@ -104,8 +100,6 @@ def extract_feature_pipeline(args):
         train_features = nn.functional.normalize(train_features, dim=1, p=2)
         test_features = nn.functional.normalize(test_features, dim=1, p=2)
 
-    # train_labels = torch.tensor([s[-1] for s in dataset_train.samples]).long()
-    # test_labels = torch.tensor([s[-1] for s in dataset_val.samples]).long()
     train_labels = torch.tensor(dataset_train.dataset.img_class_ids).long()
     test_labels = torch.tensor(dataset_val.img_class_ids).long()
     train_ftrs_labels = {fk: torch.tensor([dic[fk] for dic in dataset_train.dataset.img_ftr_ids]).long() for fk in dataset_train.dataset.img_ftr_ids[0].keys()}
@@ -125,8 +119,6 @@ def extract_features(model, data_loader, use_cuda=True, multiscale=False):
     metric_logger = utils.MetricLogger(delimiter="  ")
     features = None
     for sample in metric_logger.log_every(data_loader, 10):
-        # samples = samples.cuda(non_blocking=True)
-        # index = index.cuda(non_blocking=True)
         samples, target, img_ftr_ids, image_id, img_expl, index = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
         if multiscale:
             feats = utils.multi_scale(samples, model)

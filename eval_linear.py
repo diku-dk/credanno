@@ -36,12 +36,6 @@ import data_LIDC_IDRI as data
 def eval_linear(args):
     aggregate_labels = True
 
-    # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
-    # args.arch = 'resnet50'
-    # args.end2end = True
-    # args.nopretrain = True
-    
-    # stats = ((-0.5186440944671631, -0.5186440944671631, -0.5186440944671631), (0.511863112449646, 0.511863112449646, 0.511863112449646))
     stats = ((0.2281477451324463, 0.2281477451324463, 0.2281477451324463), (0.25145936012268066, 0.25145936012268066, 0.25145936012268066))
     utils.seed_everything(42)
 
@@ -79,14 +73,6 @@ def eval_linear(args):
 
     # ============ preparing data ... ============
     valset = data.LIDC_IDRI_EXPL(args.data_path, "val", stats=stats, agg=aggregate_labels)
-    # val_transform = pth_transforms.Compose([
-    #     pth_transforms.Resize(256, interpolation=3),
-    #     pth_transforms.CenterCrop(224),
-    #     pth_transforms.ToTensor(),
-    #     # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    #     pth_transforms.Normalize(*stats),
-    # ])
-    # dataset_val = datasets.ImageFolder(os.path.join(args.data_path, "val"), transform=val_transform)
     val_loader = torch.utils.data.DataLoader(
         valset,
         batch_size=args.batch_size_per_gpu,
@@ -103,14 +89,6 @@ def eval_linear(args):
     trainset = data.LIDC_IDRI_EXPL(args.data_path, "train", stats=stats, agg=aggregate_labels)
     indices = random.choices(range(len(trainset)), k=round(args.label_frac * len(trainset)), weights=None)
     trainset = torch.utils.data.Subset(trainset, indices)
-    # train_transform = pth_transforms.Compose([
-    #     pth_transforms.RandomResizedCrop(224),
-    #     pth_transforms.RandomHorizontalFlip(),
-    #     pth_transforms.ToTensor(),
-    #     # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    #     pth_transforms.Normalize(*stats),
-    # ])
-    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, "train"), transform=train_transform)
     sampler = torch.utils.data.distributed.DistributedSampler(trainset)
     train_loader = torch.utils.data.DataLoader(
         trainset,
@@ -202,8 +180,6 @@ def train(model, linear_classifier, optimizer, loader, epoch, n, avgpool):
     header = 'Epoch: [{}]'.format(epoch)
     for sample in metric_logger.log_every(loader, 20, header):
         # move to gpu
-        # inp = inp.cuda(non_blocking=True)
-        # target = target.cuda(non_blocking=True)
         inp, target, img_ftr_id, image_id, img_expl, idx = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
 
         # forward
@@ -245,8 +221,6 @@ def validate_network(val_loader, model, linear_classifier, n, avgpool):
     header = 'Test:'
     for sample in metric_logger.log_every(val_loader, 20, header):
         # move to gpu
-        # inp = inp.cuda(non_blocking=True)
-        # target = target.cuda(non_blocking=True)
         inp, target, img_ftr_id, image_id, img_expl, idx = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
         batch_size = inp.shape[0]
 
@@ -328,32 +302,6 @@ class LinearClassifier(nn.Module):
         # linear layer
         return self.linear(x)
 
-class Mlp(nn.Module):
-    """Multiple FC layers to train on top of frozen features"""
-    def __init__(self, dim, num_labels=2, act_layer=nn.ReLU, drop=0.5):
-        super().__init__()
-        self.num_labels = num_labels
-        self.fc1 = nn.Linear(dim, 512)
-        self.act1 = act_layer()
-        self.fc2 = nn.Linear(512, 256)
-        self.act2 = act_layer()
-        self.drop = nn.Dropout(drop)
-        self.linear = nn.Linear(256, num_labels)
-
-    def forward(self, x):
-        # flatten
-        x = x.view(x.size(0), -1)
-        # fc layers
-        x = self.fc1(x)
-        x = self.act1(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-        x = self.act2(x)
-        x = self.drop(x)
-        x = self.linear(x)
-        return x
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Evaluation with linear classification on ImageNet')
     parser.add_argument('--n_last_blocks', default=4, type=int, help="""Concatenate [CLS] tokens
@@ -380,8 +328,6 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', default="./logs", help='Path to save logs and checkpoints')
     parser.add_argument('--num_labels', default=2, type=int, help='Number of labels for linear classifier')
     parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
-    parser.add_argument('--end2end', dest='end2end', action='store_true', help='do not freeze the backbone embedding extractor')
-    parser.add_argument('--nopretrain', dest='nopretrain', action='store_true', help='do not load any pretrained weights')
     parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
     args = parser.parse_args()
     eval_linear(args)
