@@ -150,11 +150,11 @@ save_image(img_transformed[1], './logs/LIDC-IDRI-0014_s25_ann216_n00_aug.png')
 
 # %%
 # Annotation reduction plots
-dark = False
+dark = True
 output_dir = './logs/vits16_pretrain_full_2d_ann'
 df = pd.read_csv(f"{os.path.join(output_dir, 'results', 'anno_reduce.csv')}")
 
-if dark == True:
+if dark:
     bg_color = '#181717'
     plt.style.use(['ggplot','dark_background'])
     plt.rcParams['axes.facecolor'] = '#212020'
@@ -167,8 +167,8 @@ else:
     label_color = 'black'
 
 fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(10, 7), sharex='col', sharey='row')
-line1, = ax.plot(df['Annotation percentage'], df['Baseline'], label='Baseline', marker='o', markersize=12, alpha=0.8, c='#B84878')
-line2, = ax.plot(df['Annotation percentage'], df['MinAnno'], label='MinAnno', marker='X', markersize=12, alpha=0.8, c='#6CA0A3')
+line1, = ax.plot(df['Annotation percentage'], df['Baseline'], label='Baseline', marker='X', markersize=12, alpha=0.8, c='#B84878')
+line2, = ax.plot(df['Annotation percentage'], df['MinAnno'], label='MinAnno', marker='o', markersize=12, alpha=0.8, c='#6CA0A3')
 ax.set_xscale('log')
 ax.invert_xaxis()
 # ax.set_xlim(1, 1e-2)
@@ -178,5 +178,9 @@ ax.set_xlabel('Percentage of annotations used', fontsize='x-large', color=label_
 ax.set_ylabel('Accuracy of malignancy prediction [%]', fontsize='x-large', color=label_color)
 ax.tick_params(labelsize='large')
 
-plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.png')}", format='png', dpi=300, bbox_inches='tight')
-plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.pdf')}", format='pdf', bbox_inches='tight')
+if dark:
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.svg')}", 
+                    format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
+else:
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.png')}", format='png', dpi=300, bbox_inches='tight')
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.pdf')}", format='pdf', bbox_inches='tight')
