@@ -1,5 +1,4 @@
 # %% 
-from cProfile import label
 import os
 import argparse
 import json
@@ -144,13 +143,27 @@ img = pil_loader(img_path)
 transform = DataAugmentationDINO(global_crops_scale=(0.4, 1.), local_crops_scale=(0.05, 0.4), local_crops_number=8)
 img_transformed = transform(img)
 
-save_image(img_transformed[1], './logs/LIDC-IDRI-0014_s25_ann216_n00_aug.png')
+save_image(img_transformed[1], './logs/LIDC-IDRI-0014_s25_ann216_n00_aug1.png')
 # save_image(img_transformed[:2], './logs/LIDC-IDRI-0014_s25_ann216_n00_augs.png')
 # save_image(img_transformed[2:], './logs/LIDC-IDRI-0014_s25_ann216_n00_aug_local.png')
 
+from data_LIDC_IDRI import RandomRotation
+transform = pth_transforms.Compose([
+                    pth_transforms.RandomResizedCrop(224),
+                    pth_transforms.RandomHorizontalFlip(),
+                    pth_transforms.RandomVerticalFlip(),
+                    RandomRotation(angles=[0, 90, 180, 270]),
+                    pth_transforms.GaussianBlur(kernel_size=1),
+                    pth_transforms.ToTensor(),
+])
+img_transformed2 = transform(img)
+
+save_image(img_transformed2, './logs/LIDC-IDRI-0014_s25_ann216_n00_aug2.png')
+
+
 # %%
 # Annotation reduction plots
-dark = True
+dark = False
 output_dir = './logs/vits16_pretrain_full_2d_ann'
 df = pd.read_csv(f"{os.path.join(output_dir, 'results', 'anno_reduce.csv')}")
 
@@ -167,20 +180,20 @@ else:
     label_color = 'black'
 
 fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(10, 7), sharex='col', sharey='row')
-line1, = ax.plot(df['Annotation percentage'], df['Baseline'], label='Baseline', marker='X', markersize=12, alpha=0.8, c='#B84878')
-line2, = ax.plot(df['Annotation percentage'], df['MinAnno'], label='MinAnno', marker='o', markersize=12, alpha=0.8, c='#6CA0A3')
+line1, = ax.plot(df['Annotation percentage'], df['Baseline'], label='Baseline', marker='X', linewidth=5, markersize=20, alpha=0.8, c='#B84878')
+line2, = ax.plot(df['Annotation percentage'], df['MinAnno'], label='MinAnno', marker='o', linewidth=5, markersize=20, alpha=0.8, c='#2F847C')
 ax.set_xscale('log')
 ax.invert_xaxis()
 # ax.set_xlim(1, 1e-2)
 ax.set_ylim(70, 90)
-ax.legend(handles=[line2, line1], fontsize='x-large', framealpha=0.4, loc='lower left')
-ax.set_xlabel('Percentage of annotations used', fontsize='x-large', color=label_color)
-ax.set_ylabel('Accuracy of malignancy prediction [%]', fontsize='x-large', color=label_color)
-ax.tick_params(labelsize='large')
+ax.legend(handles=[line2, line1], fontsize='xx-large', framealpha=0.4, loc='lower left')
+ax.set_xlabel('Percentage of annotations used', fontsize='xx-large', color=label_color)
+ax.set_ylabel('Accuracy of malignancy prediction [%]', fontsize='xx-large', color=label_color)
+ax.tick_params(labelsize='x-large')
 
 if dark:
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.svg')}", 
                     format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
 else:
-    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.png')}", format='png', dpi=300, bbox_inches='tight')
+    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.png')}", format='png', dpi=300, bbox_inches='tight')
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.pdf')}", format='pdf', bbox_inches='tight')
