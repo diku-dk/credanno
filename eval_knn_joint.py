@@ -15,6 +15,7 @@ import os
 import sys
 import argparse
 import random
+import numpy as np
 
 import torch
 from torch import nn
@@ -106,7 +107,14 @@ def extract_feature_pipeline(args):
     test_ftrs_labels = {fk: torch.tensor([dic[fk] for dic in dataset_val.img_ftr_ids]).long() for fk in dataset_val.img_ftr_ids[0].keys()}
 
     # partial annotation
-    indices = random.choices(range(len(dataset_train)), k=round(args.label_frac * len(dataset_train)), weights=None)
+    if args.anno_wise or args.label_frac == 1:
+        indices = random.choices(range(len(dataset_train)), k=round(args.label_frac * len(dataset_train)), weights=None)
+    else:
+        nid_list = list(map(lambda ids: '_'.join(ids.split('_')[:-2] + ids.split('_')[-1:]), dataset_train.img_ids))
+        nids, ind = np.unique(nid_list, return_index=True)
+        # nids = nids[np.argsort(ind)]
+        nod_indices = ind[np.argsort(ind)]
+        indices = random.choices(nod_indices, k=round(args.label_frac * len(nod_indices)), weights=None)
     train_features = train_features[indices]
     train_labels = train_labels[indices]
     train_ftrs_labels = {fk: v[indices] for fk, v in train_ftrs_labels.items()}
@@ -278,6 +286,9 @@ if __name__ == '__main__':
     parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
     parser.add_argument('--data_path', default='/path/to/imagenet/', type=str)
     parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
+    parser.add_argument('--anno_wise', default=True, type=utils.bool_flag,
+        help="""If treat each annotation as independent when reducing annotation? (only effective when --label_frac < 1)
+        Default setting this to True to follow previous works""")
     args = parser.parse_args()
 
     # # for debugging
