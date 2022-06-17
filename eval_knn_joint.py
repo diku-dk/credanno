@@ -259,7 +259,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size_per_gpu', default=128, type=int, help='Per-GPU batch-size')
     parser.add_argument('--nb_knn', default=[10, 20, 50, 100, 150, 200, 250, 300, 350, 400], nargs='+', type=int,
         help='Number of NN to use. 20 is usually working the best.')
-    parser.add_argument('--temperature', default=0.07, type=float,
+    parser.add_argument('--temperature', default=0.1, type=float,
         help='Temperature used in the voting coefficient')
     parser.add_argument('--pretrained_weights', default='', type=str, help="Path to pretrained weights to evaluate.")
     parser.add_argument('--use_cuda', default=True, type=utils.bool_flag,
