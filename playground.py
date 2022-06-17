@@ -27,25 +27,32 @@ import vision_transformer as vits
 import data_LIDC_IDRI as data
 
 # %%
-output_dir = './logs'
-df_FTR = pd.read_csv(f'{output_dir}/pred_resultsFTR.csv', index_col=0)
-df_CLS = pd.read_csv(f'{output_dir}/pred_resultsCLS.csv', index_col=0)
-# df = df_CLS.merge(df_FTR, on='img_id', how='inner')
-df = df_CLS.fillna(df_FTR)
+# dataset setting
+ftr_CLASSES = {
+    "subtlety": [1, 2, 3, 4, 5],
+    "internalStructure": [1, 2, 3, 4], # 2, 3, never appeared
+    "calcification": [1, 2, 3, 4, 5, 6], # 1, never appeared
+    "sphericity": [1, 2, 3, 4, 5], # 1, never appeared
+    "margin": [1, 2, 3, 4, 5],
+    "lobulation": [1, 2, 3, 4, 5], 
+    "spiculation": [1, 2, 3, 4, 5],
+    "texture": [1, 2, 3, 4, 5],
+    # "malignancy": [1, 2, 3, 4, 5],
+}
 
-gt_FTR = df_FTR.loc[:, 'gt_subtlety':'gt_texture']
-pd_FTR = df_FTR.loc[:, 'pd_subtlety':'pd_texture']
+# # compute class counts
+# df = pd.DataFrame(valset.img_ftr_ids)
+# for fk in ftr_CLASSES.keys():
+#     print(f"{fk}: {dict(zip(*np.unique(df[fk], return_counts=True)))}")
 
-gt_CLS = df_CLS.loc[:, 'gt_malignancy']
-pd_CLS = df_CLS.loc[:, 'pd_malignancy']
+def calculate_correct_FTR(pd, gt:pd.DataFrame, allowed_range=1):
+    if not isinstance(pd, np.ndarray):
+        pd = pd.to_numpy()
+    preds = abs(gt.to_numpy() - pd) <= allowed_range
+    accs = preds.sum(axis=0) / len(preds)
+    corrects = preds.sum(axis=1)
+    return corrects, accs
 
-preds_FTR = abs(gt_FTR.to_numpy() - pd_FTR.to_numpy()) <= 1
-accs_FTR = preds_FTR.sum(axis=0) / len(preds_FTR)
-correctFTRs = preds_FTR.sum(axis=1)
-
-preds_CLS = gt_CLS.to_numpy() == pd_CLS.to_numpy()
-accs_CLS = preds_CLS.sum(axis=0) / len(preds_CLS)
-correctCLSs = preds_CLS.sum(axis=0)
 
 # %%
 # joint predictions
@@ -58,19 +65,48 @@ pd_FTR = df.loc[:, 'pd_subtlety':'pd_texture']
 gt_CLS = df.loc[:, 'gt_malignancy']
 pd_CLS = df.loc[:, 'pd_malignancy']
 
-preds_FTR = abs(gt_FTR.to_numpy() - pd_FTR.to_numpy()) <= 1
-accs_FTR = preds_FTR.sum(axis=0) / len(preds_FTR)
-correctFTRs = preds_FTR.sum(axis=1)
+# preds_FTR = abs(gt_FTR.to_numpy() - pd_FTR.to_numpy()) <= 1
+# accs_FTR = preds_FTR.sum(axis=0) / len(preds_FTR)
+# correctFTRs = preds_FTR.sum(axis=1)
 
 preds_CLS = gt_CLS.to_numpy() == pd_CLS.to_numpy()
 accs_CLS = preds_CLS.sum(axis=0) / len(preds_CLS)
 correctCLSs = preds_CLS.sum(axis=0)
 
-embds = np.asarray(df.loc[:, '0':])
-embds_pca = PCA(n_components=0.99, whiten=False).fit_transform(embds)
-embds_tsne = TSNE(n_components=2, init='random', learning_rate='auto').fit_transform(embds)
-df['embd_tsne_dim0'] = embds_tsne[:, 0]
-df['embd_tsne_dim1'] = embds_tsne[:, 1]
+# %%
+# plot histogram of correctly predicted FTRs
+
+allowed_range = 1
+
+# trained model
+correctFTRs, accs_FTR = calculate_correct_FTR(pd_FTR, gt_FTR, allowed_range)
+plt.hist(correctFTRs, bins=np.arange(-0.5, 9.5), density=True, alpha=0.4, color='tab:green');
+
+# random prediction
+pd_FTR_rand = np.random.randint(low=0, high=[len(f) for f in ftr_CLASSES.values()], size=gt_FTR.shape)
+correctFTRs, accs_FTR = calculate_correct_FTR(pd_FTR_rand, gt_FTR, allowed_range)
+plt.hist(correctFTRs, bins=np.arange(-0.5, 9.5), density=True, alpha=0.4, color='tab:red');
+
+# most probable combo
+combos, counts = np.unique(gt_FTR, return_counts=True, axis=0)
+pd_FTR_combo = np.tile(combos[np.argmax(counts)], [len(gt_FTR), 1])
+correctFTRs, accs_FTR = calculate_correct_FTR(pd_FTR_combo, gt_FTR, allowed_range)
+plt.hist(correctFTRs, bins=np.arange(-0.5, 9.5), density=True, alpha=0.4, color='tab:orange');
+
+# most probable single
+sing_pred = [gt_FTR[col].value_counts().idxmax() for col in gt_FTR.columns]
+if allowed_range == 1:
+    # smart naive to avoid edge
+    for i in range(len(sing_pred)):
+        if sing_pred[i] == max(list(ftr_CLASSES.values())[i]) - 1:
+            sing_pred[i] -= allowed_range
+        elif sing_pred[i] == 0:
+            sing_pred[i] += allowed_range
+pd_FTR_single = np.tile(sing_pred, [len(gt_FTR), 1])
+correctFTRs, accs_FTR = calculate_correct_FTR(pd_FTR_single, gt_FTR, allowed_range)
+plt.hist(correctFTRs, bins=np.arange(-0.5, 9.5), density=True, alpha=0.4, color='tab:blue');
+
+
 
 # %%
 # seperate correct/incorrect
@@ -81,20 +117,26 @@ gt_FTR_right = df_right.loc[:, 'gt_subtlety':'gt_texture']
 pd_FTR_right = df_right.loc[:, 'pd_subtlety':'pd_texture']
 
 preds_FTR_right = abs(gt_FTR_right.to_numpy() - pd_FTR_right.to_numpy()) <= 1
-accs_FTR = preds_FTR.sum(axis=0) / len(preds_FTR)
 correctFTRs_right = preds_FTR_right.sum(axis=1)
 
 gt_FTR_wrong = df_wrong.loc[:, 'gt_subtlety':'gt_texture']
 pd_FTR_wrong = df_wrong.loc[:, 'pd_subtlety':'pd_texture']
 
 preds_FTR_wrong = abs(gt_FTR_wrong.to_numpy() - pd_FTR_wrong.to_numpy()) <= 1
-accs_FTR = preds_FTR.sum(axis=0) / len(preds_FTR)
 correctFTRs_wrong = preds_FTR_wrong.sum(axis=1)
 
 # %%
 # plot histogram of correctly predicted FTRs
 plt.hist(correctFTRs_right, bins=np.arange(-0.5, 9.5), density=True, alpha=0.4, color='tab:green');
 plt.hist(correctFTRs_wrong, bins=np.arange(-0.5, 9.5), density=True, alpha=0.4, color='tab:red');
+
+# %%
+# compute T-SNE
+embds = np.asarray(df.loc[:, '0':])
+embds_pca = PCA(n_components=0.99, whiten=False).fit_transform(embds)
+embds_tsne = TSNE(n_components=2, init='random', learning_rate='auto').fit_transform(embds)
+df['embd_tsne_dim0'] = embds_tsne[:, 0]
+df['embd_tsne_dim1'] = embds_tsne[:, 1]
 
 # %%
 # plot t-SNE of learned EMBDs
@@ -127,7 +169,8 @@ for task, d in legend_dict.items():
     fig.ax_joint.legend(handles=handles, labels=d, title=task.capitalize(), loc='upper left')
     plt.savefig(f"{os.path.join(output_dir, f'embd_tsne_{task}.png')}", bbox_inches='tight', dpi=300)
 
-# %% Get transformed sample image for illustration
+# %% 
+# Get transformed sample image for illustration
 from main_dino import DataAugmentationDINO
 from PIL import Image
 from torchvision.utils import save_image
