@@ -53,8 +53,8 @@ def extract_feature_pipeline(args):
         pth_transforms.Normalize(*stats),
     ])
     dataset_train = data.LIDC_IDRI_EXPL(args.data_path, "train", stats=stats, agg=aggregate_labels)
-    indices = random.choices(range(len(dataset_train)), k=round(args.label_frac * len(dataset_train)), weights=None)
-    dataset_train = torch.utils.data.Subset(dataset_train, indices)
+    # indices = random.choices(range(len(dataset_train)), k=round(1. * len(dataset_train)), weights=None)
+    # dataset_train = torch.utils.data.Subset(dataset_train, indices)
     dataset_val = data.LIDC_IDRI_EXPL(args.data_path, "val", stats=stats, agg=aggregate_labels)
     sampler = torch.utils.data.DistributedSampler(dataset_train, shuffle=False)
     data_loader_train = torch.utils.data.DataLoader(
@@ -100,10 +100,16 @@ def extract_feature_pipeline(args):
         train_features = nn.functional.normalize(train_features, dim=1, p=2)
         test_features = nn.functional.normalize(test_features, dim=1, p=2)
 
-    train_labels = torch.tensor(dataset_train.dataset.img_class_ids).long()
+    train_labels = torch.tensor(dataset_train.img_class_ids).long()
     test_labels = torch.tensor(dataset_val.img_class_ids).long()
-    train_ftrs_labels = {fk: torch.tensor([dic[fk] for dic in dataset_train.dataset.img_ftr_ids]).long() for fk in dataset_train.dataset.img_ftr_ids[0].keys()}
+    train_ftrs_labels = {fk: torch.tensor([dic[fk] for dic in dataset_train.img_ftr_ids]).long() for fk in dataset_train.img_ftr_ids[0].keys()}
     test_ftrs_labels = {fk: torch.tensor([dic[fk] for dic in dataset_val.img_ftr_ids]).long() for fk in dataset_val.img_ftr_ids[0].keys()}
+
+    # partial annotation
+    indices = random.choices(range(len(dataset_train)), k=round(args.label_frac * len(dataset_train)), weights=None)
+    train_features = train_features[indices]
+    train_labels = train_labels[indices]
+    train_ftrs_labels = {fk: v[indices] for fk, v in train_ftrs_labels.items()}
 
     # save features and labels
     if args.dump_features and dist.get_rank() == 0:
