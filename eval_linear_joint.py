@@ -115,7 +115,20 @@ def eval_linear(args):
     #     return
 
     trainset = data.LIDC_IDRI_EXPL(args.data_path, "train", stats=stats, agg=aggregate_labels)
-    indices = random.choices(range(len(trainset)), k=round(args.label_frac * len(trainset)), weights=None)
+    # partial annotation
+    if args.independent_anno:
+        indices = random.sample(range(len(trainset)), k=round(args.label_frac * len(trainset)))
+    else:
+        nid_list = np.asarray(list(map(lambda ids: '_'.join(ids.split('_')[:-2] + ids.split('_')[-1:]), trainset.img_ids)))
+        nids, ind = np.unique(nid_list, return_index=True)
+        if args.anno_wise:
+            # use all annotations for each sample (better to use without consistant transform) (get better performance for k=250)
+            nods_selected = random.sample(list(nids), k=round(args.label_frac * len(nids)))
+            indices = list(np.concatenate([np.where(nid_list == nod)[0] for nod in nods_selected]))          
+        else:   
+            # use only one annotation for each sample (better to use with consistant transform) (get more reasonable best k=20)
+            nod_indices = list(ind[np.argsort(ind)])
+            indices = random.sample(nod_indices, k=round(args.label_frac * len(nod_indices)))
     trainset = torch.utils.data.Subset(trainset, indices)
     sampler = torch.utils.data.distributed.DistributedSampler(trainset)
     train_loader = torch.utils.data.DataLoader(
@@ -522,5 +535,10 @@ if __name__ == '__main__':
     parser.add_argument('--num_labels', default=2, type=int, help='Number of labels for linear classifier')
     parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
     parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
+    parser.add_argument('--independent_anno', default=True, type=utils.bool_flag,
+        help="""If treat each annotation as independent when reducing annotation?
+        Default setting this to True to follow previous works""")
+    parser.add_argument('--anno_wise', default=False, type=utils.bool_flag,
+        help="If use all annotations for each sample?")
     args = parser.parse_args()
     eval_linear(args)

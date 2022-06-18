@@ -45,6 +45,8 @@ def extract_feature_pipeline(args):
     aggregate_labels = True
     stats = ((0.2281477451324463, 0.2281477451324463, 0.2281477451324463), (0.25145936012268066, 0.25145936012268066, 0.25145936012268066))
     utils.seed_everything(42)
+    if args.independent_anno:
+        args.anno_wise = True
     
     # ============ preparing data ... ============
     transform = pth_transforms.Compose([
@@ -107,19 +109,19 @@ def extract_feature_pipeline(args):
     test_ftrs_labels = {fk: torch.tensor([dic[fk] for dic in dataset_val.img_ftr_ids]).long() for fk in dataset_val.img_ftr_ids[0].keys()}
 
     # partial annotation
-    if args.anno_wise:
-        # use all annotations for each sample (better to use without consistant transform) (get better performance for k=250)
-        nid_list = np.asarray(list(map(lambda ids: '_'.join(ids.split('_')[:-2] + ids.split('_')[-1:]), dataset_train.img_ids)))
-        nids, ind, annocounts = np.unique(nid_list, return_index=True, return_counts=True)
-        nods_selected = random.sample(list(nids), k=round(args.label_frac * len(nids)))
-        indices = list(np.concatenate([np.where(nid_list == nod)[0] for nod in nods_selected]))          
-    else:   
-        # use only one annotation for each sample (better to use with consistant transform) (get more reasonable best k=20)
+    if args.independent_anno:
+        indices = random.sample(range(len(dataset_train)), k=round(args.label_frac * len(dataset_train)))
+    else:
         nid_list = np.asarray(list(map(lambda ids: '_'.join(ids.split('_')[:-2] + ids.split('_')[-1:]), dataset_train.img_ids)))
         nids, ind = np.unique(nid_list, return_index=True)
-        nod_indices = list(ind[np.argsort(ind)])
-        indices = random.sample(nod_indices, k=round(args.label_frac * len(nod_indices)))
-
+        if args.anno_wise:
+            # use all annotations for each sample (better to use without consistant transform) (get better performance for k=250)
+            nods_selected = random.sample(list(nids), k=round(args.label_frac * len(nids)))
+            indices = list(np.concatenate([np.where(nid_list == nod)[0] for nod in nods_selected]))          
+        else:   
+            # use only one annotation for each sample (better to use with consistant transform) (get more reasonable best k=20)
+            nod_indices = list(ind[np.argsort(ind)])
+            indices = random.sample(nod_indices, k=round(args.label_frac * len(nod_indices)))
     train_features = train_features[indices]
     train_labels = train_labels[indices]
     train_ftrs_labels = {fk: v[indices] for fk, v in train_ftrs_labels.items()}
@@ -291,8 +293,11 @@ if __name__ == '__main__':
     parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
     parser.add_argument('--data_path', default='/path/to/imagenet/', type=str)
     parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
+    parser.add_argument('--independent_anno', default=True, type=utils.bool_flag,
+        help="""If treat each annotation as independent when reducing annotation?
+        Default setting this to True to follow previous works""")
     parser.add_argument('--anno_wise', default=False, type=utils.bool_flag,
-        help="If treat each annotation as independent when reducing annotation?")
+        help="If use all annotations for each sample?")
     args = parser.parse_args()
 
     # for debugging
