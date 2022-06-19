@@ -57,7 +57,7 @@ def calculate_correct_FTR(pd, gt:pd.DataFrame, allowed_range=1):
 # %%
 # joint predictions
 output_dir = './logs'
-df = pd.read_csv(f'{output_dir}/pred_results.csv', index_col=0)
+df = pd.read_csv(f'{output_dir}/pred_results_kNN_250.csv', index_col=0)
 
 gt_FTR = df.loc[:, 'gt_subtlety':'gt_texture']
 pd_FTR = df.loc[:, 'pd_subtlety':'pd_texture']
@@ -159,15 +159,43 @@ legend_dict = {
     'texture':['Non-Solid/GGO', 'Non-Solid/Mixed', 'Part Solid/Mixed', 'Solid/Mixed', 'Solid'],
 }
 # %% Save plots
+dark = False
+# sns.reset_orig()
+if dark:
+    bg_color = '#181717'
+    plt.style.use(['ggplot','dark_background'])
+    plt.rcParams['axes.facecolor'] = bg_color
+    plt.rcParams['figure.facecolor'] = bg_color
+    plt.rcParams['grid.color'] = bg_color
+    plt.rcParams['axes.edgecolor'] = '#545454'
+    label_color = 'white'
+
+output_dir = './logs/vits16_pretrain_full_2d_ann'
+xlim = (-113, 77)
+ylim = (-103, 67)
 for task, d in legend_dict.items():
-    sns.set_theme(style="white", palette=None) # palette='viridis'
+    if not dark:
+        sns.set_theme(style="white", palette=None) # palette='viridis'
     if task == 'malignancy':
-        fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue=f'gt_{task}', kind='scatter', xlim=(-105, 85), ylim=(-85, 95), palette=[sns.color_palette("flare", as_cmap=True).colors[30], sns.color_palette("flare", as_cmap=True).colors[-30]], alpha=0.6, s=40)
+        fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue=f'gt_{task}', kind='scatter', xlim=xlim, ylim=ylim, 
+                            palette=[sns.color_palette("flare", as_cmap=True).colors[30], sns.color_palette("flare", as_cmap=True).colors[-30]], 
+                            alpha=0.6, s=40)
     else:
-        fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue=f'gt_{task}', kind='scatter', xlim=(-105, 85), ylim=(-85, 95), palette='flare', alpha=0.6, s=40)
+        # break
+        fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue=f'gt_{task}', kind='scatter', xlim=xlim, ylim=ylim, 
+                            palette='flare', alpha=0.6, s=40)
+    fig.plot_joint(sns.kdeplot, zorder=0, levels=3, alpha=0.3)
+    fig.set_axis_labels('', '')
+    fig.ax_joint.set_xticks([])
+    fig.ax_joint.set_yticks([])
     handles, labels = fig.ax_joint.get_legend_handles_labels()
-    fig.ax_joint.legend(handles=handles, labels=d, title=task.capitalize(), loc='upper left')
-    plt.savefig(f"{os.path.join(output_dir, f'embd_tsne_{task}.png')}", bbox_inches='tight', dpi=300)
+    fig.ax_joint.legend(handles=handles, labels=d, fontsize=15, framealpha=0.3, handletextpad=0.1, handlelength=1, loc='lower left')
+    if dark:
+        plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'embd_tsne_{task}.svg')}", format='svg', 
+                    bbox_inches='tight', transparent=True)
+    else:
+        # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'embd_tsne_{task}.png')}", bbox_inches='tight', dpi=300)
+        plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'embd_tsne_{task}.pdf')}", format='pdf', bbox_inches='tight')
 
 # %% 
 # Get transformed sample image for illustration
