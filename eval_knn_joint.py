@@ -16,6 +16,7 @@ import sys
 import argparse
 import random
 import numpy as np
+import pandas as pd
 
 import torch
 from torch import nn
@@ -132,7 +133,7 @@ def extract_feature_pipeline(args):
         torch.save(test_features.cpu(), os.path.join(args.dump_features, "testfeat.pth"))
         torch.save(train_labels.cpu(), os.path.join(args.dump_features, "trainlabels.pth"))
         torch.save(test_labels.cpu(), os.path.join(args.dump_features, "testlabels.pth"))
-    return train_features, train_labels, train_ftrs_labels, test_features, test_labels, test_ftrs_labels
+    return train_features, train_labels, train_ftrs_labels, test_features, test_labels, test_ftrs_labels, dataset_val.img_ids
 
 
 @torch.no_grad()
@@ -182,7 +183,21 @@ def extract_features(model, data_loader, use_cuda=True, multiscale=False):
 
 
 @torch.no_grad()
-def knn_classifier(train_features, train_labels, train_ftrs_labels: dict, test_features, test_labels, test_ftrs_labels: dict, k, T, num_classes=1000):
+def knn_classifier(
+    train_features, train_labels, train_ftrs_labels: dict, 
+    test_features, test_labels, test_ftrs_labels: dict, test_img_ids, 
+    k, T, num_classes=1000):
+
+    header = [
+        'img_id', 
+        'gt_subtlety', 'gt_internalStructure', 'gt_calcification', 'gt_sphericity', 'gt_margin', 'gt_lobulation', 'gt_spiculation', 'gt_texture', 'gt_malignancy',
+        'pd_subtlety', 'pd_internalStructure', 'pd_calcification', 'pd_sphericity', 'pd_margin', 'pd_lobulation', 'pd_spiculation', 'pd_texture', 'pd_malignancy',
+        ]
+    df = pd.DataFrame(columns=header)
+    df['img_id'] = test_img_ids
+    df = pd.concat([df, pd.DataFrame(test_features.cpu().numpy())], axis=1)
+
+
     top1, top5, total = 0.0, 0.0, 0
     top1_ftrs, top5_ftrs, total_ftrs = {}, {}, {}
     for fk in train_ftrs_labels.keys():
@@ -224,6 +239,10 @@ def knn_classifier(train_features, train_labels, train_ftrs_labels: dict, test_f
             )
             _, predictions_ftr = probs_ftr.sort(1, True)
 
+            # write FTRs to df
+            df[f'gt_{fk}'][idx : min((idx + imgs_per_chunk), num_test_images)] = targets_ftr.cpu()
+            df[f'pd_{fk}'][idx : min((idx + imgs_per_chunk), num_test_images)] = predictions_ftr.narrow(1, 0, 1).squeeze().cpu()
+
             # find the predictions_ftr that match the target
             correct_ftr = abs(predictions_ftr - targets_ftr.data.view(-1, 1)) <= 1
             top1_ftrs[fk] = top1_ftrs[fk] + correct_ftr.narrow(1, 0, 1).sum().item()
@@ -249,6 +268,10 @@ def knn_classifier(train_features, train_labels, train_ftrs_labels: dict, test_f
         )
         _, predictions = probs.sort(1, True)
 
+        # write CLS to df
+        df['gt_malignancy'][idx : min((idx + imgs_per_chunk), num_test_images)] = targets.cpu()
+        df['pd_malignancy'][idx : min((idx + imgs_per_chunk), num_test_images)] = predictions.narrow(1, 0, 1).squeeze().cpu()
+
         # find the predictions that match the target
         correct = predictions.eq(targets.data.view(-1, 1))
         top1 = top1 + correct.narrow(1, 0, 1).sum().item()
@@ -260,7 +283,7 @@ def knn_classifier(train_features, train_labels, train_ftrs_labels: dict, test_f
     for fk in train_ftrs_labels.keys():
         top1_ftrs[fk] = top1_ftrs[fk] * 100.0 / total_ftrs[fk]
         top5_ftrs[fk] = top5_ftrs[fk] * 100.0 / total_ftrs[fk]
-    return top1, top5, top1_ftrs, top5_ftrs
+    return top1, top5, top1_ftrs, top5_ftrs, df
 
 
 class ReturnIndexDataset(datasets.ImageFolder):
@@ -292,6 +315,7 @@ if __name__ == '__main__':
         distributed training; see https://pytorch.org/docs/stable/distributed.html""")
     parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
     parser.add_argument('--data_path', default='/path/to/imagenet/', type=str)
+    parser.add_argument('--output_dir', default="./logs", help='Path to save logs and checkpoints')
     parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
     parser.add_argument('--independent_anno', default=True, type=utils.bool_flag,
         help="""If treat each annotation as independent when reducing annotation?
@@ -300,7 +324,7 @@ if __name__ == '__main__':
         help="If use all annotations for each sample?")
     args = parser.parse_args()
 
-    # for debugging
+    # # for debugging
     # args.pretrained_weights = './logs/vits16_pretrain_full_2d_ann/checkpoint.pth'
     # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
     # args.anno_wise = False
@@ -318,7 +342,7 @@ if __name__ == '__main__':
         test_labels = torch.load(os.path.join(args.load_features, "testlabels.pth"))
     else:
         # need to extract features !
-        train_features, train_labels, train_ftrs_labels, test_features, test_labels, test_ftrs_labels = extract_feature_pipeline(args)
+        train_features, train_labels, train_ftrs_labels, test_features, test_labels, test_ftrs_labels, test_img_ids = extract_feature_pipeline(args)
 
     if utils.get_rank() == 0:
         if args.use_cuda:
@@ -331,10 +355,12 @@ if __name__ == '__main__':
 
         print("Features are ready!\nStart the k-NN classification.")
         for k in args.nb_knn:
-            top1, top5, top1_ftrs, top5_ftrs = knn_classifier(train_features, train_labels, train_ftrs_labels, 
-                test_features, test_labels, test_ftrs_labels,
+            top1, top5, top1_ftrs, top5_ftrs, df_results = knn_classifier(train_features, train_labels, train_ftrs_labels, 
+                test_features, test_labels, test_ftrs_labels, test_img_ids,
                 k, args.temperature, num_classes=2)
             print(f"\n{k}-NN classifier result: Top1: {top1:.3f}, Top5: {top5:.3f}")
             for fk in train_ftrs_labels.keys():
                 print(f'* Acc@1 {top1_ftrs[fk]:.3f} -- {fk}')
+            if k == 250:
+                df_results.to_csv(os.path.join(args.output_dir, 'pred_results_kNN_250.csv'))
     dist.barrier()
