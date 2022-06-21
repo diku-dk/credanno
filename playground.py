@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sys
 import random
+import itertools
 
 import torch
 from torch import nn
@@ -53,6 +54,55 @@ def calculate_correct_FTR(pd, gt:pd.DataFrame, allowed_range=1):
     corrects = preds.sum(axis=1)
     return corrects, accs
 
+def prob_nFTRs_correct_dict(row_prob) -> dict:
+    if not isinstance(row_prob, np.ndarray):
+        row_prob = row_prob.to_numpy()
+    n_total_ftrs = len(row_prob)
+    n_ftrs = set(range(n_total_ftrs))
+    row_prob_neg = 1 - row_prob
+    prob_nFTRs_correct = lambda n: sum([row_prob[list(combo)].prod() * row_prob_neg[list(n_ftrs - set(combo))].prod() for combo in itertools.combinations(n_ftrs, n)])
+    return {n: prob_nFTRs_correct(n) for n in range(n_total_ftrs + 1)}
+
+# %%
+# accuracy of competitors
+header = ['method', 'subtlety', 'internalStructure', 'calcification', 'sphericity', 'margin', 'lobulation', 'spiculation', 'texture', 'malignancy']
+
+method_list = [
+    {'method':'HSCNN', 'subtlety':.719, 'calcification':.908, 'sphericity':.552, 'margin':.725, 'texture':.834, 'malignancy':.842},
+    {'method':'X-Caps', 'subtlety':.9039, 'sphericity':.8544, 'margin':.8414, 'lobulation':.7069, 'spiculation':.7523, 'texture':.9310, 'malignancy':.8639},
+    {'method':'MSN-JCN', 'subtlety':.7077, 'calcification':.9407, 'sphericity':.6863, 'margin':.7888, 'lobulation':.9475, 'spiculation':.9375, 'texture':.89, 'malignancy':.8707},
+    {'method':'WeakSup(1:3)', 'subtlety':.668, 'internalStructure':.973, 'calcification':.915, 'sphericity':.664, 'margin':.796, 'lobulation':.743, 'spiculation':.814, 'texture':.822, 'malignancy':.891},
+    {'method':'WeakSup(1:5)', 'subtlety':.431, 'internalStructure':.701, 'calcification':.639, 'sphericity':.424, 'margin':.585, 'lobulation':.406, 'spiculation':.387, 'texture':.512, 'malignancy':.824},
+    # {'method':'MinAnno(1%)', 'subtlety':.9181, 'calcification':.9337, 'sphericity':.9649, 'margin':.9077, 'lobulation':.8973, 'spiculation':.9233, 'texture':.9376, 'malignancy':.8596},
+    # {'method':'MinAnno(kNN)', 'subtlety':.96359, 'calcification':.92588, 'sphericity':.96229, 'margin':.94148, 'lobulation':.90897, 'spiculation':.92328, 'texture':.92718, 'malignancy':.88947},
+]
+
+df_acc = pd.DataFrame(method_list, columns=header)
+df_acc = df_acc.fillna(value=1)
+# df_acc.set_index('method')
+
+df_probs = pd.DataFrame(columns=range(len(ftr_CLASSES) + 1))
+for _, row in df_acc.iterrows():
+    df_probs.loc[row['method']] = prob_nFTRs_correct_dict(row['subtlety':'texture'])
+# df_probs.reset_index(inplace=True)
+# df_probs = df_probs.rename(columns = {'index':'method'})
+
+
+# %%
+sns.set_theme()
+palette = itertools.cycle(sns.cubehelix_palette(light=0.7, dark=0.3))
+plt.figure(figsize=(10, 7))
+for method in df_probs.index:
+    c = next(palette)
+    ax = sns.histplot(x=df_probs.columns, weights=df_probs.loc[method], label=method, discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
+hist, _ = np.histogram(correctFTRs, bins=np.arange(-0.5, 9.5), density=True)
+# sns.histplot(data=correctFTRs, bins=df_probs.columns, label='MinAnno', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':2.5}, color='green')
+sns.histplot(x=df_probs.columns, weights=hist, label='MinAnno', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color='#2F847C', edgecolor='#2F847C')
+plt.legend(fontsize='x-large', framealpha=0.4, loc='upper left')
+plt.xlabel('Number of correctly predicted features', fontsize='xx-large', color='black')
+plt.ylabel('Probability', fontsize='xx-large', color='black')
+plt.xticks(df_probs.columns)
+plt.tick_params(labelsize='x-large')
 
 # %%
 # joint predictions
@@ -81,6 +131,7 @@ allowed_range = 1
 # trained model
 correctFTRs, accs_FTR = calculate_correct_FTR(pd_FTR, gt_FTR, allowed_range)
 plt.hist(correctFTRs, bins=np.arange(-0.5, 9.5), density=True, alpha=0.4, color='tab:green');
+# sns.histplot(data=correctFTRs, bins=np.arange(0, 9), discrete=True, stat="probability", kde=True, kde_kws={'bw_adjust':2.5})
 
 # random prediction
 pd_FTR_rand = np.random.randint(low=0, high=[len(f) for f in ftr_CLASSES.values()], size=gt_FTR.shape)
