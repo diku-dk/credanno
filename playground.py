@@ -46,7 +46,7 @@ ftr_CLASSES = {
 # for fk in ftr_CLASSES.keys():
 #     print(f"{fk}: {dict(zip(*np.unique(df[fk], return_counts=True)))}")
 
-def calculate_correct_FTR(pd, gt:pd.DataFrame, allowed_range=1):
+def calculate_correct_FTR(pd, gt: pd.DataFrame, allowed_range=1):
     if not isinstance(pd, np.ndarray):
         pd = pd.to_numpy()
     preds = abs(gt.to_numpy() - pd) <= allowed_range
@@ -62,6 +62,24 @@ def prob_nFTRs_correct_dict(row_prob) -> dict:
     row_prob_neg = 1 - row_prob
     prob_nFTRs_correct = lambda n: sum([row_prob[list(combo)].prod() * row_prob_neg[list(n_ftrs - set(combo))].prod() for combo in itertools.combinations(n_ftrs, n)])
     return {n: prob_nFTRs_correct(n) for n in range(n_total_ftrs + 1)}
+
+def extract_results(method: str, output_dir: str = './logs'):
+    """Extract joint prediction results
+
+    Args:
+        method (str): method str
+        output_dir (str, optional): dir of result csv. Defaults to './logs'.
+
+    Returns:
+        DataFrames
+    """
+    df = pd.read_csv(f'{output_dir}/pred_results_{method}.csv', index_col=0)
+    pd_FTR = df.loc[:, 'pd_subtlety':'pd_texture']
+    gt_FTR = df.loc[:, 'gt_subtlety':'gt_texture']
+    pd_CLS = df.loc[:, 'pd_malignancy']
+    gt_CLS = df.loc[:, 'gt_malignancy']
+    return pd_FTR, gt_FTR, pd_CLS, gt_CLS
+
 
 # %%
 # accuracy of competitors
@@ -87,37 +105,67 @@ for _, row in df_acc.iterrows():
 # df_probs.reset_index(inplace=True)
 # df_probs = df_probs.rename(columns = {'index':'method'})
 
+# random prediction
+output_dir = './logs/vits16_pretrain_full_2d_ann'
+gt_FTR = extract_results('kNN_250', os.path.join(output_dir, 'results'))[1]
+pd_FTR_rand = np.random.randint(low=0, high=[len(f) for f in ftr_CLASSES.values()], size=gt_FTR.shape)
+correctFTRs_rand, accs_FTR = calculate_correct_FTR(pd_FTR_rand, gt_FTR)
 
 # %%
-sns.set_theme()
-palette = itertools.cycle(sns.cubehelix_palette(light=0.7, dark=0.3))
+# Histogram of correctly predicted FTRs
+dark=False
+
+if dark:
+    bg_color = '#181717'
+    plt.style.use(['ggplot','dark_background'])
+    # plt.rcParams['axes.facecolor'] = '#212020'
+    plt.rcParams['figure.facecolor'] = bg_color
+    plt.rcParams['grid.color'] = bg_color
+    plt.rcParams['axes.edgecolor'] = bg_color
+    label_color = 'white'
+else:
+    sns.set_theme()
+    label_color = 'black'
+
 plt.figure(figsize=(10, 7))
+
+# plot reference (random prediction)
+hist, _ = np.histogram(correctFTRs_rand, bins=np.arange(-0.5, 9.5), density=True)
+c = '#4C72B0'
+ax = sns.histplot(x=df_probs.columns, weights=hist, label='Random', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
+
+# plot competitors
+palette = itertools.cycle(sns.cubehelix_palette(light=0.7, dark=0.3))
 for method in df_probs.index:
     c = next(palette)
     ax = sns.histplot(x=df_probs.columns, weights=df_probs.loc[method], label=method, discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
-hist, _ = np.histogram(correctFTRs, bins=np.arange(-0.5, 9.5), density=True)
-# sns.histplot(data=correctFTRs, bins=df_probs.columns, label='MinAnno', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':2.5}, color='green')
-sns.histplot(x=df_probs.columns, weights=hist, label='MinAnno', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color='#2F847C', edgecolor='#2F847C')
-plt.legend(fontsize='x-large', framealpha=0.4, loc='upper left')
-plt.xlabel('Number of correctly predicted features', fontsize='xx-large', color='black')
-plt.ylabel('Probability', fontsize='xx-large', color='black')
+
+# plot ours
+label_dict = {'1p':'1%', '100p':'100%', 'kNN_250':'kNN'}
+palette = itertools.cycle(sns.color_palette("ch:2,r=.2,d=.0,l=.7"))
+for method, label in label_dict.items():
+    pd_FTR, gt_FTR = extract_results(method, os.path.join(output_dir, 'results'))[:2]
+    correctFTRs, accs_FTR = calculate_correct_FTR(pd_FTR, gt_FTR)    
+    hist, _ = np.histogram(correctFTRs, bins=np.arange(-0.5, 9.5), density=True)
+    # sns.histplot(data=correctFTRs, bins=df_probs.columns, label='MinAnno', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':2.5}, color='green')
+    c = next(palette)
+    ax = sns.histplot(x=df_probs.columns, weights=hist, label=f'MinAnno({label})', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
+
+plt.legend(fontsize=17, framealpha=0.4, loc='upper left')
+plt.xlabel('Number of correctly predicted features', fontsize=21, color=label_color)
+plt.ylabel('Probability', fontsize=21, color=label_color)
 plt.xticks(df_probs.columns)
-plt.tick_params(labelsize='x-large')
+plt.tick_params(labelsize=17)
+
+if dark:
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'prob_ftr_prediction.svg')}", format='svg', bbox_inches='tight', edgecolor='none')
+else:
+    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'prob_ftr_prediction.png')}", format='png', dpi=300, bbox_inches='tight')
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'prob_ftr_prediction.pdf')}", format='pdf', bbox_inches='tight')
+
 
 # %%
 # joint predictions
-output_dir = './logs'
-df = pd.read_csv(f'{output_dir}/pred_results_kNN_250.csv', index_col=0)
-
-gt_FTR = df.loc[:, 'gt_subtlety':'gt_texture']
-pd_FTR = df.loc[:, 'pd_subtlety':'pd_texture']
-
-gt_CLS = df.loc[:, 'gt_malignancy']
-pd_CLS = df.loc[:, 'pd_malignancy']
-
-# preds_FTR = abs(gt_FTR.to_numpy() - pd_FTR.to_numpy()) <= 1
-# accs_FTR = preds_FTR.sum(axis=0) / len(preds_FTR)
-# correctFTRs = preds_FTR.sum(axis=1)
 
 preds_CLS = gt_CLS.to_numpy() == pd_CLS.to_numpy()
 accs_CLS = preds_CLS.sum(axis=0) / len(preds_CLS)
@@ -183,6 +231,9 @@ plt.hist(correctFTRs_wrong, bins=np.arange(-0.5, 9.5), density=True, alpha=0.4, 
 
 # %%
 # compute T-SNE
+output_dir = './logs/vits16_pretrain_full_2d_ann'
+df = pd.read_csv(f"{os.path.join(output_dir, 'results', 'pred_results_kNN_250.csv')}", index_col=0)
+
 embds = np.asarray(df.loc[:, '0':])
 embds_pca = PCA(n_components=0.99, whiten=False).fit_transform(embds)
 embds_tsne = TSNE(n_components=2, init='random', learning_rate='auto').fit_transform(embds)
@@ -209,7 +260,7 @@ legend_dict = {
     'spiculation':['No Spiculation', 'Nearly No Spiculation', 'Medium Spiculation', 'Near Marked Spiculation', 'Marked Spiculation'],
     'texture':['Non-Solid/GGO', 'Non-Solid/Mixed', 'Part Solid/Mixed', 'Solid/Mixed', 'Solid'],
 }
-# %% Save plots
+# %% Save t-SNE plots
 dark = False
 # sns.reset_orig()
 if dark:

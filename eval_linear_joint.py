@@ -117,7 +117,7 @@ def eval_linear(args):
     trainset = data.LIDC_IDRI_EXPL(args.data_path, "train", stats=stats, agg=aggregate_labels)
     # partial annotation
     if args.independent_anno:
-        indices = random.sample(range(len(trainset)), k=round(args.label_frac * len(trainset)))
+        indices = random.choices(range(len(trainset)), k=round(args.label_frac * len(trainset)))
     else:
         nid_list = np.asarray(list(map(lambda ids: '_'.join(ids.split('_')[:-2] + ids.split('_')[-1:]), trainset.img_ids)))
         nids, ind = np.unique(nid_list, return_index=True)
@@ -283,7 +283,7 @@ def eval_linear(args):
     #     print(f"{test_stats[f'acc1_{fk}']:.3f}% -- {fk}")
     
     df_results = write_results(valset, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
-    df_results.to_csv(os.path.join(args.output_dir, 'pred_results.csv'))
+    df_results.to_csv(os.path.join(args.output_dir, f'pred_results_{int(args.label_frac*100)}p.csv'))
 
 
 def train(model, linear_classifiers_ftr, linear_classifier, optimizers_ftr, optimizer, loader, epoch, n, avgpool, ftr_CLASSES, class_weights=None):
