@@ -89,8 +89,8 @@ method_list = [
     {'method':'HSCNN', 'subtlety':.719, 'calcification':.908, 'sphericity':.552, 'margin':.725, 'texture':.834, 'malignancy':.842},
     {'method':'X-Caps', 'subtlety':.9039, 'sphericity':.8544, 'margin':.8414, 'lobulation':.7069, 'spiculation':.7523, 'texture':.9310, 'malignancy':.8639},
     {'method':'MSN-JCN', 'subtlety':.7077, 'calcification':.9407, 'sphericity':.6863, 'margin':.7888, 'lobulation':.9475, 'spiculation':.9375, 'texture':.89, 'malignancy':.8707},
-    {'method':'WeakSup(1:3)', 'subtlety':.668, 'internalStructure':.973, 'calcification':.915, 'sphericity':.664, 'margin':.796, 'lobulation':.743, 'spiculation':.814, 'texture':.822, 'malignancy':.891},
-    {'method':'WeakSup(1:5)', 'subtlety':.431, 'internalStructure':.701, 'calcification':.639, 'sphericity':.424, 'margin':.585, 'lobulation':.406, 'spiculation':.387, 'texture':.512, 'malignancy':.824},
+    {'method':'WeakSup (1:3)', 'subtlety':.668, 'internalStructure':.973, 'calcification':.915, 'sphericity':.664, 'margin':.796, 'lobulation':.743, 'spiculation':.814, 'texture':.822, 'malignancy':.891},
+    {'method':'WeakSup (1:5)', 'subtlety':.431, 'internalStructure':.701, 'calcification':.639, 'sphericity':.424, 'margin':.585, 'lobulation':.406, 'spiculation':.387, 'texture':.512, 'malignancy':.824},
     # {'method':'MinAnno(1%)', 'subtlety':.9181, 'calcification':.9337, 'sphericity':.9649, 'margin':.9077, 'lobulation':.8973, 'spiculation':.9233, 'texture':.9376, 'malignancy':.8596},
     # {'method':'MinAnno(kNN)', 'subtlety':.96359, 'calcification':.92588, 'sphericity':.96229, 'margin':.94148, 'lobulation':.90897, 'spiculation':.92328, 'texture':.92718, 'malignancy':.88947},
 ]
@@ -118,13 +118,15 @@ dark=False
 if dark:
     bg_color = '#181717'
     plt.style.use(['ggplot','dark_background'])
-    # plt.rcParams['axes.facecolor'] = '#212020'
+    plt.rcParams['axes.facecolor'] = '#212020'
     plt.rcParams['figure.facecolor'] = bg_color
     plt.rcParams['grid.color'] = bg_color
     plt.rcParams['axes.edgecolor'] = bg_color
     label_color = 'white'
 else:
+    sns.reset_orig()
     sns.set_theme()
+    plt.style.use('ggplot')
     label_color = 'black'
 
 plt.figure(figsize=(10, 7))
@@ -141,7 +143,7 @@ for method in df_probs.index:
     ax = sns.histplot(x=df_probs.columns, weights=df_probs.loc[method], label=method, discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
 
 # plot ours
-label_dict = {'1p':'1%', '100p':'100%', 'kNN_250':'kNN'}
+label_dict = {'1p':'1%, trained', '100p':'100%, trained', 'kNN_150_10p':'10%, 150-NN'}
 palette = itertools.cycle(sns.color_palette("ch:2,r=.2,d=.0,l=.7"))
 for method, label in label_dict.items():
     pd_FTR, gt_FTR = extract_results(method, os.path.join(output_dir, 'results'))[:2]
@@ -149,18 +151,17 @@ for method, label in label_dict.items():
     hist, _ = np.histogram(correctFTRs, bins=np.arange(-0.5, 9.5), density=True)
     # sns.histplot(data=correctFTRs, bins=df_probs.columns, label='MinAnno', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':2.5}, color='green')
     c = next(palette)
-    ax = sns.histplot(x=df_probs.columns, weights=hist, label=f'MinAnno({label})', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
+    ax = sns.histplot(x=df_probs.columns, weights=hist, label=f'MinAnno ({label})', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
 
-plt.legend(fontsize=17, framealpha=0.4, loc='upper left')
-plt.xlabel('Number of correctly predicted features', fontsize=21, color=label_color)
+plt.legend(fontsize=16.5, framealpha=0.4, loc='upper left')
+plt.xlabel('Number of correctly predicted nodule attributes', fontsize=21, color=label_color)
 plt.ylabel('Probability', fontsize=21, color=label_color)
 plt.xticks(df_probs.columns)
-plt.tick_params(labelsize=17)
+plt.tick_params(labelsize=16.5)
 
 if dark:
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'prob_ftr_prediction.svg')}", format='svg', bbox_inches='tight', edgecolor='none')
 else:
-    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'prob_ftr_prediction.png')}", format='png', dpi=300, bbox_inches='tight')
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'prob_ftr_prediction.pdf')}", format='pdf', bbox_inches='tight')
 
 
@@ -285,6 +286,7 @@ if dark:
     plt.rcParams['axes.edgecolor'] = bg_color
     label_color = 'white'
 else:
+    sns.reset_orig()
     plt.style.use('ggplot')
     label_color = 'black'
 
@@ -295,10 +297,10 @@ ax.set_xscale('log')
 ax.invert_xaxis()
 # ax.set_xlim(1, 1e-2)
 ax.set_ylim(70, 90)
-ax.legend(handles=[line2, line1], fontsize='xx-large', framealpha=0.4, loc='lower left')
-ax.set_xlabel('Percentage of annotations used', fontsize='xx-large', color=label_color)
-ax.set_ylabel('Accuracy of malignancy prediction [%]', fontsize='xx-large', color=label_color)
-ax.tick_params(labelsize='x-large')
+ax.legend(handles=[line2, line1], fontsize=21, framealpha=0.4, loc='lower left')
+ax.set_xlabel('Percentage of annotations used (logarithmic scale)', fontsize=21, color=label_color)
+ax.set_ylabel('Accuracy of malignancy prediction [%]', fontsize=21, color=label_color)
+ax.tick_params(labelsize=20)
 
 if dark:
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.svg')}", 

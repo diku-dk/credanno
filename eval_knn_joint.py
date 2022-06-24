@@ -362,5 +362,5 @@ if __name__ == '__main__':
             for fk in train_ftrs_labels.keys():
                 print(f'* Acc@1 {top1_ftrs[fk]:.3f} -- {fk}')
             if k == 250:
-                df_results.to_csv(os.path.join(args.output_dir, 'pred_results_kNN_250.csv'))
+                df_results.to_csv(os.path.join(args.output_dir, f'pred_results_kNN_{k}.csv'))
     dist.barrier()
