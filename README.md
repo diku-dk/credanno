@@ -64,7 +64,7 @@ Dataset:
     <td style="text-align:center;">88.30</td>
   </tr>
   <tr>
-    <td style="text-align:center;" colspan="9" style="text-align:left;">Partial annotation</td>
+    <td colspan="9" style="text-align:left;">Partial annotation</td>
   </tr>
   <tr>
     <td style="text-align:left;">MinAnno (10%, 50-NN)</td>
