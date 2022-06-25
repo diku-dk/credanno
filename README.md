@@ -39,7 +39,7 @@ Dataset:
     <td>91.29</td>
     <td>92.72</td>
     <td>94.67</td>
-    <td>87.52</td>
+    <td style="text-align:center;">87.52</td>
   </tr>
   <tr>
     <td style="text-align:left;">MinAnno (250-NN)</td>
@@ -50,7 +50,7 @@ Dataset:
     <td>90.90</td>
     <td>92.33</td>
     <td>92.72</td>
-    <td>88.95</td>
+    <td style="text-align:center;">88.95</td>
   </tr>
   <tr>
     <td style="text-align:left;">MinAnno (trained)</td>
@@ -61,10 +61,10 @@ Dataset:
     <td>94.15</td>
     <td>94.41</td>
     <td>97.01</td>
-    <td>88.30</td>
+    <td style="text-align:center;">88.30</td>
   </tr>
   <tr>
-    <td colspan="9" style="text-align:left;">Partial annotation</td>
+    <td style="text-align:center;" colspan="9" style="text-align:left;">Partial annotation</td>
   </tr>
   <tr>
     <td style="text-align:left;">MinAnno (10%, 50-NN)</td>
@@ -75,7 +75,7 @@ Dataset:
     <td>92.59</td>
     <td>91.16</td>
     <td>94.15</td>
-    <td>87.13</td>
+    <td style="text-align:center;">87.13</td>
   </tr>
   <tr>
     <td style="text-align:left;">MinAnno (10%, 150-NN)</td>
@@ -86,7 +86,7 @@ Dataset:
     <td>91.81</td>
     <td>90.51</td>
     <td>92.85</td>
-    <td>88.17</td>
+    <td style="text-align:center;">88.17</td>
   </tr>
   <tr>
     <td style="text-align:left;">MinAnno (1%, trained) 🤏</td>
@@ -97,7 +97,7 @@ Dataset:
     <td>89.73</td>
     <td>92.33</td>
     <td>93.76</td>
-    <td>86.09</td>
+    <td style="text-align:center;">86.09</td>
   </tr>
 </tbody>
 </table>
