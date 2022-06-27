@@ -1,4 +1,4 @@
-# MinAnno 🤏: Minimising annotation need in self-explanatory models
+# cRedAnno 🤏: Reducing annotation need in self-explanatory models
 
 arXiv: 
 
@@ -8,7 +8,8 @@ Dataset:
 
 ### Results table & anno_reduce figure
 
-<!-- <center> -->
+![anno_reduce](./imgs/anno_reduce.svg)
+
 <table align="center" style="margin: 0px auto; text-align:center; vertical-align:middle" >
 <thead>
   <tr>
@@ -31,7 +32,7 @@ Dataset:
     <td colspan="9" style="text-align:left;">Full annotation</td>
   </tr>
   <tr>
-    <td style="text-align:left;">MinAnno (50-NN)</td>
+    <td style="text-align:left;">cRedAnno (50-NN)</td>
     <td>94.93</td>
     <td>92.72</td>
     <td>95.58</td>
@@ -42,7 +43,7 @@ Dataset:
     <td style="text-align:center;">87.52</td>
   </tr>
   <tr>
-    <td style="text-align:left;">MinAnno (250-NN)</td>
+    <td style="text-align:left;">cRedAnno (250-NN)</td>
     <td>96.36</td>
     <td>92.59</td>
     <td>96.23</td>
@@ -53,7 +54,7 @@ Dataset:
     <td style="text-align:center;">88.95</td>
   </tr>
   <tr>
-    <td style="text-align:left;">MinAnno (trained)</td>
+    <td style="text-align:left;">cRedAnno (trained)</td>
     <td>95.84</td>
     <td>95.97</td>
     <td>97.40</td>
@@ -67,7 +68,7 @@ Dataset:
     <td colspan="9" style="text-align:left;">Partial annotation</td>
   </tr>
   <tr>
-    <td style="text-align:left;">MinAnno (10%, 50-NN)</td>
+    <td style="text-align:left;">cRedAnno (10%, 50-NN)</td>
     <td>94.93</td>
     <td>92.07</td>
     <td>96.75</td>
@@ -78,7 +79,7 @@ Dataset:
     <td style="text-align:center;">87.13</td>
   </tr>
   <tr>
-    <td style="text-align:left;">MinAnno (10%, 150-NN)</td>
+    <td style="text-align:left;">cRedAnno (10%, 150-NN)</td>
     <td>95.32</td>
     <td>89.47</td>
     <td>97.01</td>
@@ -89,7 +90,7 @@ Dataset:
     <td style="text-align:center;">88.17</td>
   </tr>
   <tr>
-    <td style="text-align:left;">MinAnno (1%, trained) 🤏</td>
+    <td style="text-align:left;">cRedAnno (1%, trained) 🤏</td>
     <td>91.81</td>
     <td>93.37</td>
     <td>96.49</td>
@@ -101,7 +102,6 @@ Dataset:
   </tr>
 </tbody>
 </table>
-<!-- </center> -->
 
 ## Dependencies
 

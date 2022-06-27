@@ -91,8 +91,8 @@ method_list = [
     {'method':'MSN-JCN', 'subtlety':.7077, 'calcification':.9407, 'sphericity':.6863, 'margin':.7888, 'lobulation':.9475, 'spiculation':.9375, 'texture':.89, 'malignancy':.8707},
     {'method':'WeakSup (1:3)', 'subtlety':.668, 'internalStructure':.973, 'calcification':.915, 'sphericity':.664, 'margin':.796, 'lobulation':.743, 'spiculation':.814, 'texture':.822, 'malignancy':.891},
     {'method':'WeakSup (1:5)', 'subtlety':.431, 'internalStructure':.701, 'calcification':.639, 'sphericity':.424, 'margin':.585, 'lobulation':.406, 'spiculation':.387, 'texture':.512, 'malignancy':.824},
-    # {'method':'MinAnno(1%)', 'subtlety':.9181, 'calcification':.9337, 'sphericity':.9649, 'margin':.9077, 'lobulation':.8973, 'spiculation':.9233, 'texture':.9376, 'malignancy':.8596},
-    # {'method':'MinAnno(kNN)', 'subtlety':.96359, 'calcification':.92588, 'sphericity':.96229, 'margin':.94148, 'lobulation':.90897, 'spiculation':.92328, 'texture':.92718, 'malignancy':.88947},
+    # {'method':'cRedAnno(1%)', 'subtlety':.9181, 'calcification':.9337, 'sphericity':.9649, 'margin':.9077, 'lobulation':.8973, 'spiculation':.9233, 'texture':.9376, 'malignancy':.8596},
+    # {'method':'cRedAnno(kNN)', 'subtlety':.96359, 'calcification':.92588, 'sphericity':.96229, 'margin':.94148, 'lobulation':.90897, 'spiculation':.92328, 'texture':.92718, 'malignancy':.88947},
 ]
 
 df_acc = pd.DataFrame(method_list, columns=header)
@@ -149,9 +149,9 @@ for method, label in label_dict.items():
     pd_FTR, gt_FTR = extract_results(method, os.path.join(output_dir, 'results'))[:2]
     correctFTRs, accs_FTR = calculate_correct_FTR(pd_FTR, gt_FTR)    
     hist, _ = np.histogram(correctFTRs, bins=np.arange(-0.5, 9.5), density=True)
-    # sns.histplot(data=correctFTRs, bins=df_probs.columns, label='MinAnno', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':2.5}, color='green')
+    # sns.histplot(data=correctFTRs, bins=df_probs.columns, label='cRedAnno', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':2.5}, color='green')
     c = next(palette)
-    ax = sns.histplot(x=df_probs.columns, weights=hist, label=f'MinAnno ({label})', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
+    ax = sns.histplot(x=df_probs.columns, weights=hist, label=f'cRedAnno ({label})', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
 
 plt.legend(fontsize=16.5, framealpha=0.4, loc='upper left')
 plt.xlabel('Number of correctly predicted nodule attributes', fontsize=21, color=label_color)
@@ -292,7 +292,7 @@ else:
 
 fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(10, 7), sharex='col', sharey='row')
 line1, = ax.plot(df['Annotation percentage'], df['Baseline'], label='Baseline', marker='X', linewidth=5, markersize=20, alpha=0.8, c='#B84878')
-line2, = ax.plot(df['Annotation percentage'], df['MinAnno'], label='MinAnno', marker='o', linewidth=5, markersize=20, alpha=0.8, c='#2F847C')
+line2, = ax.plot(df['Annotation percentage'], df['cRedAnno'], label='cRedAnno', marker='o', linewidth=5, markersize=20, alpha=0.8, c='#2F847C')
 ax.set_xscale('log')
 ax.invert_xaxis()
 # ax.set_xlim(1, 1e-2)
