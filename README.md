@@ -9,12 +9,13 @@
 
 ## Performance overview
 
+- Annotation reduction performance:
+
 <div align="center">
-<figure align="center">
     <img src="./imgs/anno_reduce.svg" alt="anno_reduce" width="40%" />
-    <figcaption>Annotation reduction performance</figcaption>
-</figure>
 </div>
+
+- Prediction accuracy (%) of nodule attributes and malignancy:
 
 <table align="center" style="margin: 0px auto; text-align:center; vertical-align:middle" >
 <thead>
@@ -109,6 +110,8 @@
 </tbody>
 </table>
 
+------
+
 
 ## Usage instruction
 
@@ -128,7 +131,7 @@ Use [`extract_LIDC_IDRI_nodules.py`](./extract_LIDC_IDRI_nodules.py) to extract 
 
 #### Unsupervised feature extraction
 
-Following [`DINO`](https://github.com/facebookresearch/dino), to train on the extracted nodules:
+Following [DINO](https://github.com/facebookresearch/dino), to train on the extracted nodules:
 
 ```bash
 python -m torch.distributed.launch --nproc_per_node=2 main_dino.py --arch vit_small --data_path /path_to_extracted_dir/Image/train --output_dir ./logs/vits16_pretrain_full_2d_ann --epochs 300
@@ -158,7 +161,7 @@ The results are saved in `pred_results_*.csv` files under specified `--output_di
 
 ## Code reference
 
-Our code adapts from [`DINO`](https://github.com/facebookresearch/dino).
+Our code adapts from [DINO](https://github.com/facebookresearch/dino).
 
 
 
