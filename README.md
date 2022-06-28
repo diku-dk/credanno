@@ -1,12 +1,11 @@
-# cRedAnno 🤏: Reducing annotation need in self-explanatory models
+# cRedAnno 🤏
 
-arXiv: 
+[[`arXiv`]()] [[`Dataset`](https://wiki.cancerimagingarchive.net/display/Public/LIDC-IDRI)]
 
-Dataset: 
+**C**onsiderably **Red**ucing **Anno**tation Need in Self-Explanatory Models
 
-![intro](./imgs/intro.svg)
 
-### Results table & anno_reduce figure
+## Results
 
 ![anno_reduce](./imgs/anno_reduce.svg)
 
@@ -105,6 +104,11 @@ Dataset:
 
 ## Dependencies
 
+Create an environment from the [`environment.yml`](./environment.yml) file:
+```bash
+conda env create -f environment.yml
+```
+and install [`pylidc`](https://pylidc.github.io/) for dataset pre-processing.
 
 ## Usage instruction
 
