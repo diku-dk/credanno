@@ -4,10 +4,15 @@
 
 **C**onsiderably **Red**ucing **Anno**tation Need in Self-Explanatory Models
 
+------
 
-## Results
 
-![anno_reduce](./imgs/anno_reduce.svg)
+## Performance overview
+
+<figure align="center">
+    <img src="./imgs/anno_reduce.svg" alt="anno_reduce" style="zoom:50%;" />
+    <figcaption>Annotation reduction performance</figcaption>
+</figure>
 
 <table align="center" style="margin: 0px auto; text-align:center; vertical-align:middle" >
 <thead>
@@ -102,7 +107,10 @@
 </tbody>
 </table>
 
-## Dependencies
+
+## Usage instruction
+
+### Dependencies
 
 Create an environment from the [`environment.yml`](./environment.yml) file:
 ```bash
@@ -110,15 +118,45 @@ conda env create -f environment.yml
 ```
 and install [`pylidc`](https://pylidc.github.io/) for dataset pre-processing.
 
-## Usage instruction
-
 ### Data pre-processing
+
+Use [`extract_LIDC_IDRI_nodules.py`](./extract_LIDC_IDRI_nodules.py) to extract nodule slices. 
 
 ### Training
 
-### Evaluation
+#### Unsupervised feature extraction
 
-### Pretrained model
+Following [`DINO`](https://github.com/facebookresearch/dino), to train on the extracted nodules:
+
+```bash
+python -m torch.distributed.launch --nproc_per_node=2 main_dino.py --arch vit_small --data_path /path_to_extracted_dir/Image/train --output_dir ./logs/vits16_pretrain_full_2d_ann --epochs 300
+```
+
+The reported results start from the ImageNet-pretrained full weights provided for [`ViT-S/16`](https://dl.fbaipublicfiles.com/dino/dino_deitsmall16_pretrain/dino_deitsmall16_pretrain_full_checkpoint.pth), which should be put under `./logs/vits16_pretrain_full_2d_ann/`.
+
+#### Supervised prediction
+
+To train the predictors:
+
+```bash
+python eval_linear_joint.py --pretrained_weights ./logs/vits16_pretrain_full_2d_ann/checkpoint.pth --data_path /path_to_extracted_dir --output_dir ./logs/vits16_pretrain_full_2d_ann --label_frac 0.01
+```
+
+or use the k-NN classifiers:
+
+```bash
+python eval_knn_joint.py --pretrained_weights ./logs/vits16_pretrain_full_2d_ann/checkpoint.pth --data_path /path_to_extracted_dir --output_dir ./logs/vits16_pretrain_full_2d_ann --label_frac 0.01
+```
+
+In both cases, `--label_frac` controls the used fraction of annotations.
+
+The results are saved in `pred_results_*.csv` files under specified `--output_dir`.
+
+
+
+## Code reference
+
+Our code adapts from [`DINO`](https://github.com/facebookresearch/dino).
 
 
 
