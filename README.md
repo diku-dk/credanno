@@ -10,7 +10,7 @@
 ## Performance overview
 
 <figure align="center">
-    <img src="./imgs/anno_reduce.svg" alt="anno_reduce" style="zoom:20%;" />
+    <img src="./imgs/anno_reduce.svg" alt="anno_reduce" height="250" />
     <figcaption>Annotation reduction performance</figcaption>
 </figure>
 
