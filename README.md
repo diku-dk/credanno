@@ -9,10 +9,12 @@
 
 ## Performance overview
 
+<div align="center">
 <figure align="center">
-    <img src="./imgs/anno_reduce.svg" alt="anno_reduce" height="250" />
+    <img src="./imgs/anno_reduce.svg" alt="anno_reduce" width="40%" />
     <figcaption>Annotation reduction performance</figcaption>
 </figure>
+</div>
 
 <table align="center" style="margin: 0px auto; text-align:center; vertical-align:middle" >
 <thead>
