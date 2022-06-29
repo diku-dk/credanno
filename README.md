@@ -1,6 +1,6 @@
 # cRedAnno 🤏
 
-[[`arXiv`]()] [[`Dataset`](https://wiki.cancerimagingarchive.net/display/Public/LIDC-IDRI)]
+[[`arXiv`](https://arxiv.org/abs/2206.13608)] [[`Dataset`](https://wiki.cancerimagingarchive.net/display/Public/LIDC-IDRI)]
 
 **C**onsiderably **Red**ucing **Anno**tation Need in Self-Explanatory Models
 
