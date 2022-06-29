@@ -12,7 +12,7 @@
 - Annotation reduction performance:
 
 <div align="center">
-    <img src="./imgs/anno_reduce.svg" alt="anno_reduce" width="40%" />
+    <img src="./imgs/anno_reduce.svg" alt="anno_reduce" width="400px" />
 </div>
 
 - Prediction accuracy (%) of nodule attributes and malignancy:
