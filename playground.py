@@ -122,6 +122,7 @@ if dark:
     plt.rcParams['figure.facecolor'] = bg_color
     plt.rcParams['grid.color'] = bg_color
     plt.rcParams['axes.edgecolor'] = bg_color
+    plt.rcParams['savefig.facecolor'] = bg_color
     label_color = 'white'
 else:
     sns.reset_orig()
