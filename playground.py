@@ -309,3 +309,226 @@ if dark:
 else:
     # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.png')}", format='png', dpi=300, bbox_inches='tight')
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.pdf')}", format='pdf', bbox_inches='tight')
+
+
+# %%
+# Radar plot function
+def radar_factory(num_vars, frame='circle'):
+    """Create a radar chart with `num_vars` axes.
+
+    This function creates a RadarAxes projection and registers it.
+
+    Parameters
+    ----------
+    num_vars : int
+        Number of variables for radar chart.
+    frame : {'circle' | 'polygon'}
+        Shape of frame surrounding axes.
+
+    """
+    from matplotlib.patches import Circle, RegularPolygon
+    from matplotlib.path import Path
+    from matplotlib.projections.polar import PolarAxes
+    from matplotlib.projections import register_projection
+    from matplotlib.spines import Spine
+    from matplotlib.transforms import Affine2D
+    
+    # calculate evenly-spaced axis angles
+    theta = np.linspace(0, 2*np.pi, num_vars, endpoint=False)
+    
+    class RadarTransform(PolarAxes.PolarTransform):
+        def transform_path_non_affine(self, path):
+            # Paths with non-unit interpolation steps correspond to gridlines,
+            # in which case we force interpolation (to defeat PolarTransform's
+            # autoconversion to circular arcs).
+            if path._interpolation_steps > 1:
+                path = path.interpolated(num_vars)
+            return Path(self.transform(path.vertices), path.codes)
+
+    class RadarAxes(PolarAxes):
+
+        name = 'radar'
+        
+        PolarTransform = RadarTransform
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            # rotate plot such that the first axis is at the top
+            self.set_theta_zero_location('N')
+
+        def fill(self, *args, closed=True, **kwargs):
+            """Override fill so that line is closed by default"""
+            return super().fill(closed=closed, *args, **kwargs)
+
+        def plot(self, *args, **kwargs):
+            """Override plot so that line is closed by default"""
+            lines = super().plot(*args, **kwargs)
+            for line in lines:
+                self._close_line(line)
+
+        def _close_line(self, line):
+            x, y = line.get_data()
+            # FIXME: markers at x[0], y[0] get doubled-up
+            if x[0] != x[-1]:
+                x = np.concatenate((x, [x[0]]))
+                y = np.concatenate((y, [y[0]]))
+                line.set_data(x, y)
+
+        def set_varlabels(self, labels, fontsize=None):
+            self.set_thetagrids(np.degrees(theta), labels, fontsize=fontsize)
+
+        def _gen_axes_patch(self):
+            # The Axes patch must be centered at (0.5, 0.5) and of radius 0.5
+            # in axes coordinates.
+            if frame == 'circle':
+                return Circle((0.5, 0.5), 0.5)
+            elif frame == 'polygon':
+                return RegularPolygon((0.5, 0.5), num_vars,
+                                      radius=.5, edgecolor="k")
+            else:
+                raise ValueError("unknown value for 'frame': %s" % frame)
+
+        def draw(self, renderer):
+            """ Draw. If frame is polygon, make gridlines polygon-shaped """
+            if frame == 'polygon':
+                gridlines = self.yaxis.get_gridlines()
+                for gl in gridlines:
+                    gl.get_path()._interpolation_steps = num_vars
+            super().draw(renderer)
+
+
+        def _gen_axes_spines(self):
+            if frame == 'circle':
+                return super()._gen_axes_spines()
+            elif frame == 'polygon':
+                # spine_type must be 'left'/'right'/'top'/'bottom'/'circle'.
+                spine = Spine(axes=self,
+                              spine_type='circle',
+                              path=Path.unit_regular_polygon(num_vars))
+                # unit_regular_polygon gives a polygon of radius 1 centered at
+                # (0, 0) but we want a polygon of radius 0.5 centered at (0.5,
+                # 0.5) in axes coordinates.
+                spine.set_transform(Affine2D().scale(.5).translate(.5, .5)
+                                    + self.transAxes)
+
+
+                return {'polar': spine}
+            else:
+                raise ValueError("unknown value for 'frame': %s" % frame)
+
+    register_projection(RadarAxes)
+    return theta
+
+
+# %%
+# Radar plot
+
+## accuracy of competitors
+header = ['method', 'Malignancy', 'Sub', 'Cal', 'Sph', 'Mar', 'Lob', 'Spi', 'Tex', 'internalStructure']
+
+method_list_fullanno = [
+    {'method':'HSCNN', 'Sub':.719, 'Cal':.908, 'Sph':.552, 'Mar':.725, 'Tex':.834, 'Malignancy':.842},
+    {'method':'X-Caps', 'Sub':.9039, 'Sph':.8544, 'Mar':.8414, 'Lob':.7069, 'Spi':.7523, 'Tex':.9310, 'Malignancy':.8639},
+    {'method':'MSN-JCN', 'Sub':.7077, 'Cal':.9407, 'Sph':.6863, 'Mar':.7888, 'Lob':.9475, 'Spi':.9375, 'Tex':.89, 'Malignancy':.8707},
+    # {'method':'WeakSup (1:3)', 'Sub':.668, 'internalStructure':.973, 'Cal':.915, 'Sph':.664, 'Mar':.796, 'Lob':.743, 'Spi':.814, 'Tex':.822, 'Malignancy':.891},
+    # {'method':'WeakSup (1:5)', 'Sub':.431, 'internalStructure':.701, 'Cal':.639, 'Sph':.424, 'Mar':.585, 'Lob':.406, 'Spi':.387, 'Tex':.512, 'Malignancy':.824},
+    # {'method':'cRedAnno (1%)', 'Sub':.9181, 'Cal':.9337, 'Sph':.9649, 'Mar':.9077, 'Lob':.8973, 'Spi':.9233, 'Tex':.9376, 'Malignancy':.8596},
+    {'method':'cRedAnno (trained)', 'Sub':.9584, 'Cal':.9597, 'Sph':.9740, 'Mar':.9649, 'Lob':.9415, 'Spi':.9441, 'Tex':.9701, 'Malignancy':.8830},
+    {'method':'cRedAnno (250-NN)', 'Sub':.96359, 'Cal':.92588, 'Sph':.96229, 'Mar':.94148, 'Lob':.90897, 'Spi':.92328, 'Tex':.92718, 'Malignancy':.88947},
+]
+df_acc_fullanno = pd.DataFrame(method_list_fullanno, columns=header)
+
+method_list_partialanno = [
+    # {'method':'HSCNN', 'Sub':.719, 'Cal':.908, 'Sph':.552, 'Mar':.725, 'Tex':.834, 'Malignancy':.842},
+    # {'method':'X-Caps', 'Sub':.9039, 'Sph':.8544, 'Mar':.8414, 'Lob':.7069, 'Spi':.7523, 'Tex':.9310, 'Malignancy':.8639},
+    # {'method':'MSN-JCN', 'Sub':.7077, 'Cal':.9407, 'Sph':.6863, 'Mar':.7888, 'Lob':.9475, 'Spi':.9375, 'Tex':.89, 'Malignancy':.8707},
+    {'method':'WeakSup (1:3)', 'Sub':.668, 'internalStructure':.973, 'Cal':.915, 'Sph':.664, 'Mar':.796, 'Lob':.743, 'Spi':.814, 'Tex':.822, 'Malignancy':.891},
+    {'method':'WeakSup (1:5)', 'Sub':.431, 'internalStructure':.701, 'Cal':.639, 'Sph':.424, 'Mar':.585, 'Lob':.406, 'Spi':.387, 'Tex':.512, 'Malignancy':.824},
+    {'method':'cRedAnno (1%, trained)', 'Sub':.9181, 'Cal':.9337, 'Sph':.9649, 'Mar':.9077, 'Lob':.8973, 'Spi':.9233, 'Tex':.9376, 'Malignancy':.8609},
+    {'method':'cRedAnno (10%, 150-NN)', 'Sub':.9532, 'Cal':.8947, 'Sph':.9701, 'Mar':.9389, 'Lob':.9181, 'Spi':.9051, 'Tex':.9285, 'Malignancy':.8817},
+    # {'method':'cRedAnno (trained)', 'Sub':.9584, 'Cal':.9597, 'Sph':.9740, 'Mar':.9649, 'Lob':.9415, 'Spi':.9441, 'Tex':.9701, 'Malignancy':.8830},
+    # {'method':'cRedAnno (250-NN)', 'Sub':.96359, 'Cal':.92588, 'Sph':.96229, 'Mar':.94148, 'Lob':.90897, 'Spi':.92328, 'Tex':.92718, 'Malignancy':.88947},
+]
+df_acc_partialanno = pd.DataFrame(method_list_partialanno, columns=header)
+
+# %%
+# plot
+dark=False
+output_dir = './logs/vits16_pretrain_full_2d_ann'
+
+if dark:
+    bg_color = '#181717'
+    plt.style.use(['ggplot','dark_background'])
+    plt.rcParams['axes.facecolor'] = '#212020'
+    plt.rcParams['figure.facecolor'] = bg_color
+    plt.rcParams['grid.color'] = bg_color
+    plt.rcParams['axes.edgecolor'] = bg_color
+    plt.rcParams['savefig.facecolor'] = bg_color
+    label_color = 'white'
+else:
+    sns.reset_orig()
+    sns.set_theme()
+    plt.style.use('ggplot')
+    label_color = 'black'
+plt.rcParams['legend.title_fontsize'] = '21'
+
+def plot_pizza(df_acc):
+    columns_titles = ['method', 'Malignancy', 'Sub', 'Cal', 'Sph', 'Mar', 'Lob', 'Spi', 'Tex', 'internalStructure']
+    df_acc = df_acc.reindex(columns=columns_titles)
+
+    theta = radar_factory(8, frame='polygon')
+
+    spoke_labels = df_acc.columns[1:-1]
+    # title, case_data = data_sample[0]
+
+    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(projection='radar'))
+    # fig.subplots_adjust(top=0.85, bottom=0.05)
+
+    # plot competitors
+    palette = itertools.cycle(sns.color_palette("flare"))
+    markers = itertools.cycle(('p', '*', '.', 'P', 'X', '+', 'x', 'h', 'H', '1')) 
+    for _, row in df_acc[:-2].iterrows():
+        values = row['Malignancy':'Tex'].to_numpy()
+        c = next(palette)
+        m = next(markers)
+        line = ax.plot(theta, values, label=row['method'], color=c, marker=m, markersize=12)
+        ax.fill(theta[pd.notna(values)], values[pd.notna(values)], alpha=0.1, color=c, label='_nolegend_')
+    # plot ours
+    palette = itertools.cycle(sns.color_palette("ch:2,r=.2,d=.0,l=.7"))
+    for _, row in df_acc[-2:].iterrows():
+        values = row['Malignancy':'Tex'].to_numpy()
+        c = next(palette)
+        line = ax.plot(theta, values, label=row['method'], color=c, lw=4)
+        ax.fill(theta[pd.notna(values)], values[pd.notna(values)], alpha=0.1, color=c, label='_nolegend_')
+
+
+    ax.set_rlabel_position(0)
+    ax.set_rgrids([0., 0.2, 0.4, 0.6, 0.8, 1.], fontsize=16.5)
+    ax.set_rlim(0, 1)
+    # ax.set_title(title,  position=(0.5, 1.1), ha='center')
+    ax.xaxis.set_tick_params(pad=10)
+    # ax.set_varlabels(spoke_labels, fontsize=21)
+    plt.xticks(theta, spoke_labels, size=21, color=label_color)
+
+
+plot_pizza(df_acc_fullanno)
+plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, title="Full annotation", loc='lower right', bbox_to_anchor=(1.6, 0.))
+if dark:
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno.svg')}", 
+                    format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
+else:
+    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno.png')}", format='png', dpi=300, bbox_inches='tight')
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno.pdf')}", format='pdf', bbox_inches='tight')
+
+
+plot_pizza(df_acc_partialanno)
+plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, title="Partial annotation", loc='lower right', bbox_to_anchor=(1.6, 0.))
+if dark:
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno.svg')}", 
+                    format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
+else:
+    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno.png')}", format='png', dpi=300, bbox_inches='tight')
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno.pdf')}", format='pdf', bbox_inches='tight')
+
+
+# plt.show()
