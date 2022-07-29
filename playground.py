@@ -453,7 +453,7 @@ df_acc_partialanno = pd.DataFrame(method_list_partialanno, columns=header)
 
 # %%
 # plot
-dark=False
+dark=True
 output_dir = './logs/vits16_pretrain_full_2d_ann'
 
 if dark:
@@ -509,9 +509,10 @@ def plot_pizza(df_acc):
     ax.xaxis.set_tick_params(pad=10)
     # ax.set_varlabels(spoke_labels, fontsize=21)
     plt.xticks(theta, spoke_labels, size=21, color=label_color)
+    return fig, ax
 
 
-plot_pizza(df_acc_fullanno)
+fig, ax = plot_pizza(df_acc_fullanno)
 plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, title="Full annotation", loc='lower right', bbox_to_anchor=(1.6, 0.))
 if dark:
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno.svg')}", 
@@ -521,7 +522,7 @@ else:
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno.pdf')}", format='pdf', bbox_inches='tight')
 
 
-plot_pizza(df_acc_partialanno)
+fig, ax = plot_pizza(df_acc_partialanno)
 plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, title="Partial annotation", loc='lower right', bbox_to_anchor=(1.6, 0.))
 if dark:
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno.svg')}", 
