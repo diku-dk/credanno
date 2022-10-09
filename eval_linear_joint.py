@@ -118,6 +118,7 @@ def eval_linear(args):
     # partial annotation
     if args.independent_anno:
         indices = random.choices(range(len(trainset)), k=round(args.label_frac * len(trainset)))
+        unlabelled_indices = list(set(range(len(trainset))) - set(indices))
     else:
         nid_list = np.asarray(list(map(lambda ids: '_'.join(ids.split('_')[:-2] + ids.split('_')[-1:]), trainset.img_ids)))
         nids, ind = np.unique(nid_list, return_index=True)
@@ -139,6 +140,18 @@ def eval_linear(args):
         pin_memory=True,
     )
     print(f"Data loaded with {len(trainset)} train and {len(valset)} val imgs.")
+
+    unlabelledset_as_val = data.LIDC_IDRI_EXPL(args.data_path, "train", transform_split="val", stats=stats, agg=aggregate_labels)
+    unlabelledset_as_val = torch.utils.data.Subset(unlabelledset_as_val, unlabelled_indices)
+    # sampler_unlabelled = torch.utils.data.distributed.DistributedSampler(unlabelledset_as_val)
+    # unlabelled_loader_as_val = torch.utils.data.DataLoader(
+    #     unlabelledset_as_val,
+    #     sampler=sampler_unlabelled,
+    #     batch_size=args.batch_size_per_gpu,
+    #     num_workers=args.num_workers,
+    #     pin_memory=True,
+    # )
+
 
     # compute class weights
     df = pd.DataFrame(trainset.dataset.img_ftr_ids)
@@ -201,6 +214,158 @@ def eval_linear(args):
         train_loader.sampler.set_epoch(epoch)
 
         train_stats = train(model, linear_classifiers_ftr, linear_classifier, optimizers_ftr, optimizer, train_loader, epoch, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+        for fk in ftr_CLASSES.keys():
+            schedulers_ftr[fk].step()
+        scheduler.step()
+
+        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
+                     'epoch': epoch}
+        if epoch % args.val_freq == 0 or epoch == args.epochs - 1:
+            test_stats = validate_network(val_loader, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+            print(f"Max Accuracy so far at epoch {epoch} of the network on the {len(valset)} test images: {test_stats['acc1']:.3f}%")
+            for fk in ftr_CLASSES.keys():
+                # print(f"{test_stats[f'acc1_{fk}']:.1f}% -- {fk}")
+                best_accs_ftr[fk] = max(best_accs_ftr[fk], test_stats[f'acc1_{fk}'])
+                print(f'{best_accs_ftr[fk]:.3f}% -- {fk}')
+            best_acc = max(best_acc, test_stats["acc1"])
+            print(f'{best_acc:.3f}% -- malignancy')
+            log_stats = {**{k: v for k, v in log_stats.items()},
+                         **{f'test_{k}': v for k, v in test_stats.items()}}
+        if utils.is_main_process():
+            with (Path(args.output_dir) / "log.txt").open("a") as f:
+                f.write(json.dumps(log_stats) + "\n")
+            epoch_save = epoch + 1
+            for fk in ftr_CLASSES.keys():
+                if best_accs_ftr[fk] == test_stats[f'acc1_{fk}']:
+                    save_dict = {
+                        "epoch": epoch_save,
+                        "state_dict": linear_classifiers_ftr[fk].state_dict(),
+                        "optimizer": optimizers_ftr[fk].state_dict(),
+                        "scheduler": schedulers_ftr[fk].state_dict(),
+                        f"best_acc_{fk}": best_accs_ftr[fk],
+                    }
+                    torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{args.arch}_{fk}_best.pth.tar"))
+                if epoch_save == args.epochs:
+                    save_dict = {
+                        "epoch": epoch + 1,
+                        "state_dict": linear_classifiers_ftr[fk].state_dict(),
+                        "optimizer": optimizers_ftr[fk].state_dict(),
+                        "scheduler": schedulers_ftr[fk].state_dict(),
+                        f"best_acc_{fk}": best_accs_ftr[fk],
+                    }
+                    torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{args.arch}_{fk}.pth.tar"))
+            if best_acc == test_stats["acc1"]:
+                save_dict = {
+                    "epoch": epoch_save,
+                    "state_dict": linear_classifier.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "best_acc": best_acc,
+                }
+                torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{args.arch}_best.pth.tar"))
+            if epoch_save == args.epochs:
+                save_dict = {
+                    "epoch": epoch + 1,
+                    "state_dict": linear_classifier.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "best_acc": best_acc,
+                }
+                torch.save(save_dict, os.path.join(args.output_dir, f"ckpt_{args.arch}.pth.tar"))
+    print("Training of the supervised linear classifier on frozen features completed.\n"
+                "Top-1 test accuracy: {acc:.3f}".format(acc=best_acc))
+    for fk in ftr_CLASSES.keys():
+        # print(f'{best_accs_ftr[fk]:.3f}% -- {fk}')
+        utils.restart_from_checkpoint(
+            os.path.join(args.output_dir, f"ckpt_{args.arch}_{fk}_best.pth.tar"),
+            run_variables=to_restore,
+            state_dict=linear_classifiers_ftr[fk],
+            optimizer=optimizers_ftr[fk],
+            scheduler=schedulers_ftr[fk],
+        )
+    utils.restart_from_checkpoint(
+        os.path.join(args.output_dir, f"ckpt_{args.arch}_best.pth.tar"),
+        run_variables=to_restore,
+        state_dict=linear_classifier,
+        optimizer=optimizer,
+        scheduler=scheduler,
+    )
+    test_stats = validate_network(val_loader, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+
+    df_unlabelled = write_results(unlabelledset_as_val, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+    df_unlabelled.to_csv(os.path.join(args.output_dir, f"pseudoset_{int(args.label_frac*100)}p.csv"))
+
+    df_results = write_results(valset, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
+    df_results.to_csv(os.path.join(args.output_dir, f'pred_results_{int(args.label_frac*100)}p.csv'))
+
+    exit()
+    # ============ training with pseudo labels ... ============
+    
+    df_unlabelled = pd.read_csv(os.path.join(args.output_dir, f"pseudoset_{int(args.label_frac*100)}p.csv"))
+    unlabelledset_as_train = data.LIDC_IDRI_EXPL_pseudo(df_unlabelled, args.data_path, "train", transform_split="train", stats=stats, agg=aggregate_labels)
+    # unlabelledset_as_train = torch.utils.data.Subset(unlabelledset_as_train, unlabelled_indices)
+    sampler_unlabelled = torch.utils.data.distributed.DistributedSampler(unlabelledset_as_train)
+    unlabelled_loader_as_train = torch.utils.data.DataLoader(
+        unlabelledset_as_train,
+        sampler=sampler_unlabelled,
+        batch_size=args.batch_size_per_gpu,
+        num_workers=args.num_workers,
+        pin_memory=True,
+    )
+    
+    print(f"Data loaded with {len(trainset)}(labelled) and {len(unlabelledset_as_train)}/{len(unlabelledset_as_val)} (unlabelled) train imgs, and {len(valset)} val imgs.")
+
+    # reset optimizer for CLS
+    optimizer = torch.optim.SGD(
+        linear_classifier.parameters(),
+        args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 256., # linear scaling rule
+        momentum=0.9,
+        weight_decay=0, # we do not apply weight decay
+    )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, eta_min=0)
+
+    # Optionally resume from a checkpoint for CLS
+    to_restore = {"epoch": 0, "best_acc": 0.}
+    # utils.restart_from_checkpoint(
+    #     os.path.join(args.output_dir, f"ckpt_{args.arch}.pth.tar"),
+    #     run_variables=to_restore,
+    #     state_dict=linear_classifier,
+    #     optimizer=optimizer,
+    #     scheduler=scheduler,
+    # )
+    start_epoch = to_restore["epoch"]
+    best_acc = to_restore["best_acc"]
+
+    # reset optimizers for FTRs
+    optimizers_ftr = {}
+    schedulers_ftr = {}
+    best_accs_ftr = {}
+    for fk in ftr_CLASSES.keys():
+        optimizers_ftr[fk] = torch.optim.SGD(
+            linear_classifiers_ftr[fk].parameters(),
+            args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 256., # linear scaling rule
+            momentum=0.9,
+            weight_decay=0, # we do not apply weight decay
+        )
+        schedulers_ftr[fk] = torch.optim.lr_scheduler.CosineAnnealingLR(optimizers_ftr[fk], args.epochs, eta_min=0)
+
+        # Optionally resume from a checkpoint for FTRs
+        to_restore = {"epoch": 0}
+        to_restore[f"best_acc_{fk}"] = 0.
+        # utils.restart_from_checkpoint(
+        #     os.path.join(args.output_dir, f"ckpt_{args.arch}_{fk}.pth.tar"),
+        #     run_variables=to_restore,
+        #     state_dict=linear_classifiers_ftr[fk],
+        #     optimizer=optimizers_ftr[fk],
+        #     scheduler=schedulers_ftr[fk],
+        # )
+        start_epoch = to_restore["epoch"]
+        best_accs_ftr[fk] = to_restore[f"best_acc_{fk}"]
+
+    for epoch in tqdm(range(args.epochs, args.epochs * 2)):
+        unlabelled_loader_as_train.sampler.set_epoch(epoch)
+
+        train_stats = train(model, linear_classifiers_ftr, linear_classifier, optimizers_ftr, optimizer, unlabelled_loader_as_train, epoch, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
         for fk in ftr_CLASSES.keys():
             schedulers_ftr[fk].step()
         scheduler.step()
@@ -443,6 +608,7 @@ def write_results(valset, model, linear_classifiers_ftr, linear_classifier, n, a
         'img_id', 
         'gt_subtlety', 'gt_internalStructure', 'gt_calcification', 'gt_sphericity', 'gt_margin', 'gt_lobulation', 'gt_spiculation', 'gt_texture', 'gt_malignancy',
         'pd_subtlety', 'pd_internalStructure', 'pd_calcification', 'pd_sphericity', 'pd_margin', 'pd_lobulation', 'pd_spiculation', 'pd_texture', 'pd_malignancy',
+        'conf_subtlety', 'conf_internalStructure', 'conf_calcification', 'conf_sphericity', 'conf_margin', 'conf_lobulation', 'conf_spiculation', 'conf_texture', 'conf_malignancy',
         ]
     df = pd.DataFrame(columns=header)
     df['img_id'] = image_id
@@ -453,15 +619,19 @@ def write_results(valset, model, linear_classifiers_ftr, linear_classifier, n, a
     for fk in ftr_CLASSES.keys():
         output_f = linear_classifiers_ftr[fk](output)
         output_catted = torch.cat((output_catted, output_f), dim=-1)
-        _, pred = torch.max(output_f.data, 1)
+        prob_f = output_f.softmax(dim=-1)
+        conf, pred = torch.max(prob_f.data, 1)
         df[f'gt_{fk}'] = target_ftrs[fk]
         df[f'pd_{fk}'] = pred.cpu()
+        df[f'conf_{fk}'] = conf.cpu()
 
     # predict CLS
     output_cls = linear_classifier(output_catted)
-    _, pred_cls = torch.max(output_cls.data, 1)
+    prob_cls = output_cls.softmax(dim=-1)
+    conf_cls, pred_cls = torch.max(prob_cls.data, 1)
     df['gt_malignancy'] = target.cpu()
     df['pd_malignancy'] = pred_cls.cpu()
+    df['conf_malignancy'] = conf_cls.cpu()
     
     return df
 
@@ -541,4 +711,11 @@ if __name__ == '__main__':
     parser.add_argument('--anno_wise', default=False, type=utils.bool_flag,
         help="If use all annotations for each sample?")
     args = parser.parse_args()
+    
+    # # for debugging
+    # args.pretrained_weights = './logs/vits16_pretrain_full_2d_ann/checkpoint.pth'
+    # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
+    # args.label_frac = 0.01
+    # args.lr = 0.0005
+
     eval_linear(args)

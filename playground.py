@@ -453,7 +453,7 @@ df_acc_partialanno = pd.DataFrame(method_list_partialanno, columns=header)
 
 # %%
 # plot
-dark=True
+dark=False
 output_dir = './logs/vits16_pretrain_full_2d_ann'
 
 if dark:
@@ -513,23 +513,25 @@ def plot_pizza(df_acc):
 
 
 fig, ax = plot_pizza(df_acc_fullanno)
-plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, title="Full annotation", loc='lower right', bbox_to_anchor=(1.6, 0.))
+plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, title="Full annotation", loc='lower left', bbox_to_anchor=(1., 0.))
 if dark:
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno.svg')}", 
                     format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
 else:
     # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno.png')}", format='png', dpi=300, bbox_inches='tight')
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno.pdf')}", format='pdf', bbox_inches='tight')
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', 'poster', f'pizza_fullanno.svg')}", format='svg', bbox_inches='tight')
 
 
 fig, ax = plot_pizza(df_acc_partialanno)
-plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, title="Partial annotation", loc='lower right', bbox_to_anchor=(1.6, 0.))
+plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, title="Partial annotation", loc='lower left', bbox_to_anchor=(1., 0.))
 if dark:
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno.svg')}", 
                     format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
 else:
     # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno.png')}", format='png', dpi=300, bbox_inches='tight')
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno.pdf')}", format='pdf', bbox_inches='tight')
+    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', 'poster', f'pizza_partialanno.svg')}", format='svg', bbox_inches='tight')
 
 
 # plt.show()
