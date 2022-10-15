@@ -115,9 +115,11 @@ def eval_linear(args):
     #     return
 
     trainset = data.LIDC_IDRI_EXPL(args.data_path, "train", stats=stats, agg=aggregate_labels)
+    len_trainset = len(trainset)
+    basic_frac = 0.01
     # partial annotation
     if args.independent_anno:
-        indices = random.choices(range(len(trainset)), k=round(args.label_frac * len(trainset)))
+        indices = random.choices(range(len(trainset)), k=round(basic_frac * len(trainset)))
         unlabelled_indices = list(set(range(len(trainset))) - set(indices))
     else:
         nid_list = np.asarray(list(map(lambda ids: '_'.join(ids.split('_')[:-2] + ids.split('_')[-1:]), trainset.img_ids)))
@@ -293,16 +295,19 @@ def eval_linear(args):
     test_stats = validate_network(val_loader, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
 
     df_unlabelled = write_results(unlabelledset_as_val, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
-    df_unlabelled.to_csv(os.path.join(args.output_dir, f"pseudoset_{int(args.label_frac*100)}p.csv"))
+    df_unlabelled.to_csv(os.path.join(args.output_dir, f"pseudoset_{int(basic_frac*100)}p.csv"))
 
     df_results = write_results(valset, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
-    df_results.to_csv(os.path.join(args.output_dir, f'pred_results_{int(args.label_frac*100)}p.csv'))
+    df_results.to_csv(os.path.join(args.output_dir, f'pred_results_{int(basic_frac*100)}p.csv'))
 
     # exit()
     # ============ training with pseudo labels ... ============
     
-    df_unlabelled = pd.read_csv(os.path.join(args.output_dir, f"pseudoset_{int(args.label_frac*100)}p.csv"))
-    unlabelledset_as_train = data.LIDC_IDRI_EXPL_pseudo(df_unlabelled, args.data_path, "train", transform_split="train", stats=stats, agg=aggregate_labels, soft_labels=args.soft_labels)
+    df_unlabelled = pd.read_csv(os.path.join(args.output_dir, f"pseudoset_{int(basic_frac*100)}p.csv"))
+    unlabelledset_as_train = data.LIDC_IDRI_EXPL_pseudo(
+        df_unlabelled, args.data_path, "train", transform_split="train", 
+        num_labels=round(args.label_frac * len_trainset) - round(basic_frac * len_trainset),
+        stats=stats, agg=aggregate_labels, soft_labels=args.soft_labels)
     # unlabelledset_as_train = torch.utils.data.Subset(unlabelledset_as_train, unlabelled_indices)
     sampler_unlabelled = torch.utils.data.distributed.DistributedSampler(unlabelledset_as_train)
     unlabelled_loader_as_train = torch.utils.data.DataLoader(
@@ -313,7 +318,9 @@ def eval_linear(args):
         pin_memory=True,
     )
     
-    print(f"Data loaded with {len(trainset)}(labelled) and {len(unlabelledset_as_train)}/{len(unlabelledset_as_val)} (unlabelled) train imgs, and {len(valset)} val imgs.")
+    print(f"Data loaded with {len(trainset)} + {unlabelledset_as_train.num_labels}(labelled) \
+        and {len(unlabelledset_as_train) - unlabelledset_as_train.num_labels}/{len(unlabelledset_as_val)} (unlabelled) train imgs, \
+        and {len(valset)} val imgs.")
 
     # reset optimizer for CLS
     optimizer = torch.optim.SGD(
@@ -720,11 +727,10 @@ if __name__ == '__main__':
         help="If use soft label for finetuning?")
     args = parser.parse_args()
     
-    # # for debugging
+    # for debugging
     # args.pretrained_weights = './logs/vits16_pretrain_full_2d_ann/checkpoint.pth'
     # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
     # args.label_frac = 0.01
     # args.lr = 0.0005
-    # args.soft_labels = True
 
     eval_linear(args)

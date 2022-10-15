@@ -38,7 +38,7 @@ class RandomRotation:
 
 
 class LIDC_IDRI_EXPL_pseudo(torch.utils.data.Dataset):
-    def __init__(self, df, base_path, split, transform_split=None, stats=None, verbose=False, agg=True, transform=None, soft_labels=False):
+    def __init__(self, df, base_path, split, transform_split=None, num_labels=0, stats=None, verbose=False, agg=True, transform=None, soft_labels=False):
         assert split in {"train", "val", "test"}
         self.base_path = base_path
         self.split = "val" if split == "test" else split
@@ -47,6 +47,7 @@ class LIDC_IDRI_EXPL_pseudo(torch.utils.data.Dataset):
         self.soft_labels = soft_labels
         if transform_split is None:
             transform_split = split
+        self.num_labels = num_labels
 
         header = [
             'img_id', 
@@ -58,7 +59,9 @@ class LIDC_IDRI_EXPL_pseudo(torch.utils.data.Dataset):
 
         # df = df[header]
         df = df[list(filter(lambda c: '_' in c, df.columns.to_list()))]  # filter out non-feature columns
-        df = df[df.conf_malignancy > 0.9]   # filter out low confidence
+        self.threshold_label = df['conf_malignancy'][df['conf_malignancy'].argsort()[self.num_labels]] 
+        if self.num_labels == 0:
+            df = df[df.conf_malignancy > 0.9]   # filter out low confidence
 
         if agg:
             # append a nid column
@@ -157,7 +160,7 @@ class LIDC_IDRI_EXPL_pseudo(torch.utils.data.Dataset):
                 # add feature labels
                 img_ftr_id = {df_header[i].replace('pd_', ''):np.round(ann[i]) for i in range(df.columns.get_loc('pd_subtlety'), df.columns.get_loc('pd_subtlety')+8)}
 
-
+            img_class_id_pseudo = img_class_id if ann.conf_malignancy < self.threshold_label else img_class_id_pseudo  # use gt label if confidence is low
             img_class_ids += [img_class_id_pseudo] * len(imgs_per_ann)
             img_ftr_ids += [img_ftr_id] * len(imgs_per_ann)
 
