@@ -38,12 +38,13 @@ class RandomRotation:
 
 
 class LIDC_IDRI_EXPL_pseudo(torch.utils.data.Dataset):
-    def __init__(self, df, base_path, split, transform_split=None, stats=None, verbose=False, agg=True, transform=None):
+    def __init__(self, df, base_path, split, transform_split=None, stats=None, verbose=False, agg=True, transform=None, soft_labels=False):
         assert split in {"train", "val", "test"}
         self.base_path = base_path
         self.split = "val" if split == "test" else split
         self.img_shape = (224, 224) # (32, 32) #(128, 128)
         self.verbose = verbose
+        self.soft_labels = soft_labels
         if transform_split is None:
             transform_split = split
 
@@ -55,10 +56,10 @@ class LIDC_IDRI_EXPL_pseudo(torch.utils.data.Dataset):
             ]
         self.header = header
 
-        # df = pd.read_csv(f'{self.base_path}/meta_{self.split}.csv', index_col=0, converters={'coords': lambda x: list(map(float, x[1:-1].split(',')))})
-        df = df[header]
+        # df = df[header]
+        df = df[list(filter(lambda c: '_' in c, df.columns.to_list()))]  # filter out non-feature columns
         df = df[df.conf_malignancy > 0.9]   # filter out low confidence
-        # df[header] = df[header].astype(int)
+
         if agg:
             # append a nid column
             df['nid'] = df.apply(lambda row: '_'.join(row.img_id.split('_')[:-2] + row.img_id.split('_')[-1:]), axis=1)
@@ -133,8 +134,9 @@ class LIDC_IDRI_EXPL_pseudo(torch.utils.data.Dataset):
         img_class_ids = []
         img_ftr_ids = []
         fnames = []
+        df_header = df.columns.values
 
-        for ann in df.itertuples():
+        for ann in df.itertuples(index=False):
             # print(ann)
             if df_median is not None:
                 img_class_id = 1 if ann.gt_malignancy > 0 else 0 
@@ -145,21 +147,18 @@ class LIDC_IDRI_EXPL_pseudo(torch.utils.data.Dataset):
             imgs_per_ann = glob(f"{os.path.join(self.base_path, 'Image', self.split, str(img_class_id), ann.img_id)}*.png")
             fnames += imgs_per_ann
             img_ids += [ann.img_id] * len(imgs_per_ann)
+            if self.soft_labels:
+                img_class_id_pseudo = [ann.prob_malignancy_0, ann.prob_malignancy_1]
+                img_ftr_id = {}
+                for ftr in self.header[10:18]:
+                    ftr = ftr.replace('pd_', '')
+                    img_ftr_id[ftr] = ann[df.columns.get_loc(f'prob_{ftr}_1') : df.columns.get_loc(f'prob_{ftr}_1') + len(list(filter(lambda c: f'prob_{ftr}_' in c, df_header)))]
+            else:
+                # add feature labels
+                img_ftr_id = {df_header[i].replace('pd_', ''):np.round(ann[i]) for i in range(df.columns.get_loc('pd_subtlety'), df.columns.get_loc('pd_subtlety')+8)}
+
+
             img_class_ids += [img_class_id_pseudo] * len(imgs_per_ann)
-
-
-            # add feature labels
-            img_ftr_id = {self.header[i].replace('pd_', ''):np.round(ann[i+1]) for i in range(10, 18)}
-            # img_ftr_id = {
-            #     "subtlety": 0 if ann.subtlety < 3 else 1,  # 0(unlikely):1-2, 1(suspicious):3-5
-            #     "internalStructure": 1 if ann.internalStructure == 1 else 0,
-            #     "calcification": 1 if ann.calcification == 4 else 0,
-            #     "sphericity": 0 if ann.sphericity > 4 else 1,
-            #     "margin": 0 if ann.margin > 4 else 1,
-            #     "lobulation": 0 if ann.lobulation < 3 else 1,
-            #     "spiculation": 0 if ann.spiculation < 3 else 1,
-            #     "texture": 0 if ann.texture > 4 else 1,
-            # }
             img_ftr_ids += [img_ftr_id] * len(imgs_per_ann)
 
         return img_ids, img_class_ids, img_ftr_ids, scenes, fnames

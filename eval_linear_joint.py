@@ -298,11 +298,11 @@ def eval_linear(args):
     df_results = write_results(valset, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
     df_results.to_csv(os.path.join(args.output_dir, f'pred_results_{int(args.label_frac*100)}p.csv'))
 
-    exit()
+    # exit()
     # ============ training with pseudo labels ... ============
     
     df_unlabelled = pd.read_csv(os.path.join(args.output_dir, f"pseudoset_{int(args.label_frac*100)}p.csv"))
-    unlabelledset_as_train = data.LIDC_IDRI_EXPL_pseudo(df_unlabelled, args.data_path, "train", transform_split="train", stats=stats, agg=aggregate_labels)
+    unlabelledset_as_train = data.LIDC_IDRI_EXPL_pseudo(df_unlabelled, args.data_path, "train", transform_split="train", stats=stats, agg=aggregate_labels, soft_labels=args.soft_labels)
     # unlabelledset_as_train = torch.utils.data.Subset(unlabelledset_as_train, unlabelled_indices)
     sampler_unlabelled = torch.utils.data.distributed.DistributedSampler(unlabelledset_as_train)
     unlabelled_loader_as_train = torch.utils.data.DataLoader(
@@ -465,7 +465,11 @@ def train(model, linear_classifiers_ftr, linear_classifier, optimizers_ftr, opti
     for sample in metric_logger.log_every(loader, 20, header):
         # move to gpu
         inp, target, img_ftr_ids, image_id, img_expl, idx = map(lambda x: x.cuda(non_blocking=True) if torch.is_tensor(x) else x, sample)
-        target_ftrs = {fk:v.long().cuda(non_blocking=True) for fk, v in img_ftr_ids.items()}
+        if args.soft_labels:
+            target = torch.stack(target, dim=-1).cuda(non_blocking=True)
+            target_ftrs = {fk:torch.stack(v, dim=-1).cuda(non_blocking=True) for fk, v in img_ftr_ids.items()}
+        else:
+            target_ftrs = {fk:v.long().cuda(non_blocking=True) for fk, v in img_ftr_ids.items()}
 
         # forward
         with torch.no_grad():
@@ -624,6 +628,7 @@ def write_results(valset, model, linear_classifiers_ftr, linear_classifier, n, a
         df[f'gt_{fk}'] = target_ftrs[fk]
         df[f'pd_{fk}'] = pred.cpu()
         df[f'conf_{fk}'] = conf.cpu()
+        df = pd.concat([df, pd.DataFrame(prob_f.cpu().numpy(), columns=[f'prob_{fk}_{c}' for c in ftr_CLASSES[fk]])], axis=1)
 
     # predict CLS
     output_cls = linear_classifier(output_catted)
@@ -632,6 +637,7 @@ def write_results(valset, model, linear_classifiers_ftr, linear_classifier, n, a
     df['gt_malignancy'] = target.cpu()
     df['pd_malignancy'] = pred_cls.cpu()
     df['conf_malignancy'] = conf_cls.cpu()
+    df = pd.concat([df, pd.DataFrame(prob_cls.cpu().numpy(), columns=[f'prob_malignancy_{c}' for c in range(output_cls.size(-1))])], axis=1)
     
     return df
 
@@ -710,6 +716,8 @@ if __name__ == '__main__':
         Default setting this to True to follow previous works""")
     parser.add_argument('--anno_wise', default=False, type=utils.bool_flag,
         help="If use all annotations for each sample?")
+    parser.add_argument('--soft_labels', default=False, type=utils.bool_flag,
+        help="If use soft label for finetuning?")
     args = parser.parse_args()
     
     # # for debugging
@@ -717,5 +725,6 @@ if __name__ == '__main__':
     # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
     # args.label_frac = 0.01
     # args.lr = 0.0005
+    # args.soft_labels = True
 
     eval_linear(args)
