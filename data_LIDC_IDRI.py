@@ -17,7 +17,7 @@ import pandas as pd
 import sklearn.preprocessing as skp
 import matplotlib.pyplot as plt
 from glob import glob
-
+from scipy.stats import entropy
 
 # os.environ["MKL_NUM_THREADS"] = "6"
 # os.environ["NUMEXPR_NUM_THREADS"] = "6"
@@ -48,6 +48,7 @@ class LIDC_IDRI_EXPL_pseudo(torch.utils.data.Dataset):
         if transform_split is None:
             transform_split = split
         self.num_labels = num_labels
+        use_entropy = False
 
         header = [
             'img_id', 
@@ -59,8 +60,13 @@ class LIDC_IDRI_EXPL_pseudo(torch.utils.data.Dataset):
 
         # df = df[header]
         df = df[list(filter(lambda c: '_' in c, df.columns.to_list()))]  # filter out non-feature columns
-        self.threshold_label = df['conf_malignancy'][df['conf_malignancy'].argsort()[self.num_labels]]
-        self.gt_sample_ids = df['img_id'][df.conf_malignancy < self.threshold_label].to_list() if gt_sample_ids is None else gt_sample_ids
+        if use_entropy:
+            df['entropy'] = df.iloc[:, df.columns.get_loc('prob_subtlety_1') : df.columns.get_loc('prob_subtlety_1') + len(list(filter(lambda c: 'prob_' in c, df.columns.values)))].apply(lambda row: entropy(row), axis=1)
+            self.threshold_label = df['entropy'][df['entropy'].to_numpy().argsort()[::-1][self.num_labels]]
+            self.gt_sample_ids = df['img_id'][df.entropy > self.threshold_label].to_list() if gt_sample_ids is None else gt_sample_ids
+        else:
+            self.threshold_label = df['conf_malignancy'][df['conf_malignancy'].argsort()[self.num_labels]]
+            self.gt_sample_ids = df['img_id'][df.conf_malignancy < self.threshold_label].to_list() if gt_sample_ids is None else gt_sample_ids
         if self.num_labels == 0:
             df = df[df.conf_malignancy > 0.9]   # filter out low confidence
 
@@ -161,7 +167,7 @@ class LIDC_IDRI_EXPL_pseudo(torch.utils.data.Dataset):
                 # add feature labels
                 img_ftr_id = {df_header[i].replace('pd_', ''):np.round(ann[i]) for i in range(df.columns.get_loc('pd_subtlety'), df.columns.get_loc('pd_subtlety')+8)}
 
-            img_class_id_pseudo = img_class_id if ann.img_id in self.gt_sample_ids else img_class_id_pseudo  # use gt label if confidence is low
+            img_class_id_pseudo = img_class_id if ann.img_id in self.gt_sample_ids else img_class_id_pseudo  # use gt label for seed samples
             img_class_ids += [img_class_id_pseudo] * len(imgs_per_ann)
             img_ftr_ids += [img_ftr_id] * len(imgs_per_ann)
 
