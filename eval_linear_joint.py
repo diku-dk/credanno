@@ -52,7 +52,7 @@ def eval_linear(args):
         "texture": [1, 2, 3, 4, 5],
         # "malignancy": [1, 2, 3, 4, 5],
     }
-    utils.seed_everything(42)
+    utils.seed_everything(args.seed)
 
     utils.init_distributed_mode(args)
     print("git:\n  {}\n".format(utils.get_sha()))
@@ -116,10 +116,9 @@ def eval_linear(args):
 
     trainset = data.LIDC_IDRI_EXPL(args.data_path, "train", stats=stats, agg=aggregate_labels)
     len_trainset = len(trainset)
-    basic_frac = 0.01
     # partial annotation
     if args.independent_anno:
-        indices = random.choices(range(len(trainset)), k=round(basic_frac * len(trainset)))
+        indices = random.choices(range(len(trainset)), k=round(args.label_frac * len(trainset)))
         unlabelled_indices = list(set(range(len(trainset))) - set(indices))
     else:
         nid_list = np.asarray(list(map(lambda ids: '_'.join(ids.split('_')[:-2] + ids.split('_')[-1:]), trainset.img_ids)))
@@ -295,18 +294,18 @@ def eval_linear(args):
     test_stats = validate_network(val_loader, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
 
     df_unlabelled = write_results(unlabelledset_as_val, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
-    df_unlabelled.to_csv(os.path.join(args.output_dir, f"pseudoset_{int(basic_frac*100)}p.csv"))
+    df_unlabelled.to_csv(os.path.join(args.output_dir, f"pseudoset_{int(args.label_frac*100)}p.csv"))
 
     df_results = write_results(valset, model, linear_classifiers_ftr, linear_classifier, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
-    df_results.to_csv(os.path.join(args.output_dir, f'pred_results_{int(basic_frac*100)}p.csv'))
+    df_results.to_csv(os.path.join(args.output_dir, f'pred_results_{int(args.label_frac*100)}p.csv'))
 
-    # exit()
+    exit()
     # ============ training with pseudo labels ... ============
     
-    df_unlabelled = pd.read_csv(os.path.join(args.output_dir, f"pseudoset_{int(basic_frac*100)}p.csv"))
+    df_unlabelled = pd.read_csv(os.path.join(args.output_dir, f"pseudoset_{int(args.label_frac*100)}p.csv"))
     unlabelledset_as_train = data.LIDC_IDRI_EXPL_pseudo(
         df_unlabelled, args.data_path, "train", transform_split="train", 
-        num_labels=round(args.label_frac * len_trainset) - round(basic_frac * len_trainset),
+        num_labels=round(args.label_frac * len_trainset) - round(args.label_frac * len_trainset),
         stats=stats, agg=aggregate_labels, soft_labels=args.soft_labels)
     # unlabelledset_as_train = torch.utils.data.Subset(unlabelledset_as_train, unlabelled_indices)
     sampler_unlabelled = torch.utils.data.distributed.DistributedSampler(unlabelledset_as_train)
@@ -727,6 +726,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', default="./logs", help='Path to save logs and checkpoints')
     parser.add_argument('--num_labels', default=2, type=int, help='Number of labels for linear classifier')
     parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
+    parser.add_argument('--seed', default=42, type=int, help='seed for initialising training. ')
     parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
     parser.add_argument('--independent_anno', default=True, type=utils.bool_flag,
         help="""If treat each annotation as independent when reducing annotation?

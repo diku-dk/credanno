@@ -52,7 +52,7 @@ def eval_linear(args):
         "texture": [1, 2, 3, 4, 5],
         # "malignancy": [1, 2, 3, 4, 5],
     }
-    utils.seed_everything(42)
+    utils.seed_everything(args.seed)
 
     utils.init_distributed_mode(args)
     print("git:\n  {}\n".format(utils.get_sha()))
@@ -394,7 +394,7 @@ def eval_linear(args):
             start_epoch = to_restore["epoch"]
             best_accs_ftr[fk] = to_restore[f"best_acc_{fk}"]
 
-        for epoch in tqdm(range(args.epochs, args.epochs + 20)):
+        for epoch in tqdm(range(args.epochs, args.epochs + 10)):
             unlabelled_loader_as_train.sampler.set_epoch(epoch)
 
             train_stats = train(model, linear_classifiers_ftr, linear_classifier, optimizers_ftr, optimizer, unlabelled_loader_as_train, epoch, args.n_last_blocks, args.avgpool_patchtokens, ftr_CLASSES)
@@ -763,6 +763,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', default="./logs", help='Path to save logs and checkpoints')
     parser.add_argument('--num_labels', default=2, type=int, help='Number of labels for linear classifier')
     parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
+    parser.add_argument('--seed', default=42, type=int, help='seed for initialising training. ')
     parser.add_argument("--label_frac", default=1, type=float, help="fraction of labels to use for finetuning")
     parser.add_argument('--independent_anno', default=True, type=utils.bool_flag,
         help="""If treat each annotation as independent when reducing annotation?
@@ -777,7 +778,8 @@ if __name__ == '__main__':
     # # for debugging
     # args.pretrained_weights = './logs/vits16_pretrain_full_2d_ann/checkpoint.pth'
     # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
-    # args.label_frac = 0.01
+    # args.label_frac = 0.1
     # args.lr = 0.0005
+    # args.mode = 'boost'
 
     eval_linear(args)
