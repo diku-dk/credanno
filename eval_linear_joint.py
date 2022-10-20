@@ -227,9 +227,13 @@ def eval_linear(args):
             for fk in ftr_CLASSES.keys():
                 # print(f"{test_stats[f'acc1_{fk}']:.1f}% -- {fk}")
                 best_accs_ftr[fk] = max(best_accs_ftr[fk], test_stats[f'acc1_{fk}'])
-                print(f'{best_accs_ftr[fk]:.3f}% -- {fk}')
+                # print(f'{best_accs_ftr[fk]:.3f}% -- {fk}')
             best_acc = max(best_acc, test_stats["acc1"])
-            print(f'{best_acc:.3f}% -- malignancy')
+            # print(f'{best_acc:.3f}% -- malignancy')
+            msg1 = [fk[:3] for fk in ftr_CLASSES.keys() if fk != 'internalStructure'] + ['malignancy']
+            msg2 = [f'{best_accs_ftr[fk]:.3f}' for fk in ftr_CLASSES.keys() if fk != 'internalStructure'] + [f'{best_acc:.3f}']
+            print('\t'.join(msg1))
+            print('\t'.join(msg2))
             log_stats = {**{k: v for k, v in log_stats.items()},
                          **{f'test_{k}': v for k, v in test_stats.items()}}
         if utils.is_main_process():
@@ -394,9 +398,13 @@ def eval_linear(args):
             for fk in ftr_CLASSES.keys():
                 # print(f"{test_stats[f'acc1_{fk}']:.1f}% -- {fk}")
                 best_accs_ftr[fk] = max(best_accs_ftr[fk], test_stats[f'acc1_{fk}'])
-                print(f'{best_accs_ftr[fk]:.3f}% -- {fk}')
+                # print(f'{best_accs_ftr[fk]:.3f}% -- {fk}')
             best_acc = max(best_acc, test_stats["acc1"])
-            print(f'{best_acc:.3f}% -- malignancy')
+            # print(f'{best_acc:.3f}% -- malignancy')
+            msg1 = [fk[:3] for fk in ftr_CLASSES.keys() if fk != 'internalStructure'] + ['malignancy']
+            msg2 = [f'{best_accs_ftr[fk]:.3f}' for fk in ftr_CLASSES.keys() if fk != 'internalStructure'] + [f'{best_acc:.3f}']
+            print('\t'.join(msg1))
+            print('\t'.join(msg2))
             log_stats = {**{k: v for k, v in log_stats.items()},
                          **{f'test_{k}': v for k, v in test_stats.items()}}
         if utils.is_main_process():

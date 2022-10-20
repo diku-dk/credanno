@@ -29,10 +29,13 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 from sklearn.utils.class_weight import compute_class_weight
+from sklearn.cluster import KMeans
+from sklearn.metrics import pairwise_distances_argmin_min
 
 import utils
 import vision_transformer as vits
 import data_LIDC_IDRI as data
+from eval_knn_joint import extract_features
 
 
 def eval_linear(args):
@@ -105,21 +108,43 @@ def eval_linear(args):
     trainset = data.LIDC_IDRI_EXPL(args.data_path, "train", stats=stats, agg=aggregate_labels)
     len_trainset = len(trainset)
     basic_frac = 0.01
-    # partial annotation
-    if args.independent_anno:
-        indices = random.choices(range(len(trainset)), k=round(basic_frac * len(trainset)))
-        unlabelled_indices = list(set(range(len(trainset))) - set(indices))
-    else:
-        nid_list = np.asarray(list(map(lambda ids: '_'.join(ids.split('_')[:-2] + ids.split('_')[-1:]), trainset.img_ids)))
-        nids, ind = np.unique(nid_list, return_index=True)
-        if args.anno_wise:
-            # use all annotations for each sample (better to use without consistant transform) (get better performance for k=250)
-            nods_selected = random.sample(list(nids), k=round(args.label_frac * len(nids)))
-            indices = list(np.concatenate([np.where(nid_list == nod)[0] for nod in nods_selected]))          
-        else:   
-            # use only one annotation for each sample (better to use with consistant transform) (get more reasonable best k=20)
-            nod_indices = list(ind[np.argsort(ind)])
-            indices = random.sample(nod_indices, k=round(args.label_frac * len(nod_indices)))
+    # # partial annotation
+    # if args.independent_anno:
+    #     indices = random.choices(range(len(trainset)), k=round(basic_frac * len(trainset)))
+    #     unlabelled_indices = list(set(range(len(trainset))) - set(indices))
+    # else:
+    #     nid_list = np.asarray(list(map(lambda ids: '_'.join(ids.split('_')[:-2] + ids.split('_')[-1:]), trainset.img_ids)))
+    #     nids, ind = np.unique(nid_list, return_index=True)
+    #     if args.anno_wise:
+    #         # use all annotations for each sample (better to use without consistant transform) (get better performance for k=250)
+    #         nods_selected = random.sample(list(nids), k=round(args.label_frac * len(nids)))
+    #         indices = list(np.concatenate([np.where(nid_list == nod)[0] for nod in nods_selected]))          
+    #     else:   
+    #         # use only one annotation for each sample (better to use with consistant transform) (get more reasonable best k=20)
+    #         nod_indices = list(ind[np.argsort(ind)])
+    #         indices = random.sample(nod_indices, k=round(args.label_frac * len(nod_indices)))
+    # trainset = torch.utils.data.Subset(trainset, indices)
+    sampler = torch.utils.data.distributed.DistributedSampler(trainset)
+    train_loader = torch.utils.data.DataLoader(
+        trainset,
+        sampler=sampler,
+        batch_size=args.batch_size_per_gpu,
+        num_workers=args.num_workers,
+        pin_memory=True,
+    )
+    # print(f"Data loaded with {len(trainset)} train and {len(valset)} val imgs.")
+
+    # ============ extract features ... ============
+    print("Extracting features for train set...")
+    train_features = extract_features(model, train_loader)
+    if utils.get_rank() == 0:
+        train_features = nn.functional.normalize(train_features, dim=1, p=2)
+    km = KMeans(n_clusters=round(basic_frac * len(trainset)), random_state=args.seed).fit(train_features.cpu())
+    indices, _ = pairwise_distances_argmin_min(km.cluster_centers_, train_features.cpu(), metric='cosine')
+    unlabelled_indices = list(set(range(len(trainset))) - set(indices))
+    print("Seed samples:", end=' ')
+    print(*indices, sep=', ')
+
     trainset = torch.utils.data.Subset(trainset, indices)
     sampler = torch.utils.data.distributed.DistributedSampler(trainset)
     train_loader = torch.utils.data.DataLoader(
@@ -228,9 +253,13 @@ def eval_linear(args):
                 for fk in ftr_CLASSES.keys():
                     # print(f"{test_stats[f'acc1_{fk}']:.1f}% -- {fk}")
                     best_accs_ftr[fk] = max(best_accs_ftr[fk], test_stats[f'acc1_{fk}'])
-                    print(f'{best_accs_ftr[fk]:.3f}% -- {fk}')
+                    # print(f'{best_accs_ftr[fk]:.3f} -- {fk}')
                 best_acc = max(best_acc, test_stats["acc1"])
-                print(f'{best_acc:.3f}% -- malignancy')
+                # print(f'{best_acc:.3f} -- malignancy')
+                msg1 = [fk[:3] for fk in ftr_CLASSES.keys() if fk != 'internalStructure'] + ['malignancy']
+                msg2 = [f'{best_accs_ftr[fk]:.3f}' for fk in ftr_CLASSES.keys() if fk != 'internalStructure'] + [f'{best_acc:.3f}']
+                print('\t'.join(msg1))
+                print('\t'.join(msg2))
                 log_stats = {**{k: v for k, v in log_stats.items()},
                             **{f'test_{k}': v for k, v in test_stats.items()}}
             if utils.is_main_process():
@@ -410,9 +439,14 @@ def eval_linear(args):
                 for fk in ftr_CLASSES.keys():
                     # print(f"{test_stats[f'acc1_{fk}']:.1f}% -- {fk}")
                     best_accs_ftr[fk] = max(best_accs_ftr[fk], test_stats[f'acc1_{fk}'])
-                    print(f'{best_accs_ftr[fk]:.3f}% -- {fk}')
+                    # print(f'{best_accs_ftr[fk]:.3f} -- {fk}')
                 best_acc = max(best_acc, test_stats["acc1"])
-                print(f'{best_acc:.3f}% -- malignancy')
+                # print(f'{best_acc:.3f} -- malignancy')
+                msg1 = [fk[:3] for fk in ftr_CLASSES.keys() if fk != 'internalStructure'] + ['malignancy']
+                msg2 = [f'{best_accs_ftr[fk]:.3f}' for fk in ftr_CLASSES.keys() if fk != 'internalStructure'] + [f'{best_acc:.3f}']
+                print('\t'.join(msg1))
+                print('\t'.join(msg2))
+                
                 log_stats = {**{k: v for k, v in log_stats.items()},
                             **{f'test_{k}': v for k, v in test_stats.items()}}
             if utils.is_main_process():
@@ -574,7 +608,7 @@ def train(model, linear_classifiers_ftr, linear_classifier, optimizers_ftr, opti
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
+    # print("Averaged stats:", metric_logger)
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
@@ -629,7 +663,7 @@ def validate_network(val_loader, model, linear_classifiers_ftr, linear_classifie
 
     for fk in ftr_CLASSES.keys():
         print('* Acc@1 {top1.global_avg:.3f} loss {losses.global_avg:.3f} -- {fk}'
-            .format(top1=metric_logger.meters[f'acc1_{fk}'], losses=metric_logger.meters[f'loss_{fk}'], fk=fk))
+            .format(top1=metric_logger.meters[f'acc1_{fk}'], losses=metric_logger.meters[f'loss_{fk}'], fk=fk[:3]), end=', ')
     if linear_classifier.module.num_labels >= 5:
         print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
           .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
@@ -780,6 +814,6 @@ if __name__ == '__main__':
     # args.data_path = '../../datasets/LIDC_IDRI/imagenet_2d_ann'
     # args.label_frac = 0.1
     # args.lr = 0.0005
-    # args.mode = 'boost'
+    # args.mode = 'seed'
 
     eval_linear(args)
