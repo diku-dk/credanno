@@ -174,7 +174,7 @@ df = pd.read_csv(f"{os.path.join(output_dir, 'results', 'pred_results_kNN_250.cs
 
 embds = np.asarray(df.loc[:, '0':])
 embds_pca = PCA(n_components=0.99, whiten=False).fit_transform(embds)
-embds_tsne = TSNE(n_components=2, init='random', learning_rate='auto').fit_transform(embds)
+embds_tsne = TSNE(n_components=2, init='random', learning_rate='auto', random_state=42).fit_transform(embds)
 df['embd_tsne_dim0'] = embds_tsne[:, 0]
 df['embd_tsne_dim1'] = embds_tsne[:, 1]
 
@@ -274,9 +274,12 @@ save_image(img_transformed2, './logs/LIDC-IDRI-0014_s25_ann216_n00_aug2.png')
 
 # %%
 # Annotation reduction plots
+from scipy.stats.mstats import gmean
+import matplotlib.ticker as mtick
 dark = False
 output_dir = './logs/vits16_pretrain_full_2d_ann'
 df = pd.read_csv(f"{os.path.join(output_dir, 'results', 'anno_reduce.csv')}")
+# R:B84878, G:2F847C, B:4C72B0, Y:F2B134, O:E68742, P:833FDF
 
 if dark:
     bg_color = '#181717'
@@ -290,25 +293,61 @@ else:
     sns.reset_orig()
     plt.style.use('ggplot')
     label_color = 'black'
+style_text = {'color': label_color, 'size': 20, 'alpha': 0.8}
 
 fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(10, 7), sharex='col', sharey='row')
 line1, = ax.plot(df['Annotation percentage'], df['Baseline'], label='Baseline', marker='X', linewidth=5, markersize=20, alpha=0.8, c='#B84878')
-line2, = ax.plot(df['Annotation percentage'], df['cRedAnno'], label='cRedAnno', marker='o', linewidth=5, markersize=20, alpha=0.8, c='#2F847C')
+line2, = ax.plot(df['Annotation percentage'], df['cRedAnno'], label='cRedAnno', marker='o', linewidth=5, markersize=20, alpha=0.8, c='#4C72B0')
+line3, = ax.plot(df['Annotation percentage'], df['cRedAnno+'], label='cRedAnno+', marker='D', linewidth=5, markersize=20, alpha=0.8, c='#2F847C')
+errbar1 = ax.fill_between(df['Annotation percentage'], df['Baseline']-df['std_Baseline'], df['Baseline']+df['std_Baseline'], alpha=0.4, color='#B84878')
+errbar2 = ax.fill_between(df['Annotation percentage'], df['cRedAnno']-df['std_cRedAnno'], df['cRedAnno']+df['std_cRedAnno'], alpha=0.4, color='#4C72B0')
+errbar3 = ax.fill_between(df['Annotation percentage'], df['cRedAnno+']-df['std_cRedAnno+'], df['cRedAnno+']+df['std_cRedAnno+'], alpha=0.4, color='#2F847C')
+# errbar1 = ax.errorbar(df['Annotation percentage'], df['Baseline'], yerr=df['std_Baseline'], fmt='none', ecolor='#B84878', elinewidth=5, capsize=10, capthick=5)
+# errbar2 = ax.errorbar(df['Annotation percentage'], df['cRedAnno'], yerr=df['std_cRedAnno'], fmt='none', ecolor='#2F847C', elinewidth=5, capsize=10, capthick=5)
+# errbar3 = ax.errorbar(df['Annotation percentage'], df['cRedAnno+'], yerr=df['std_cRedAnno+'], fmt='none', ecolor='#F2B134', elinewidth=5, capsize=10, capthick=5)
+
 ax.set_xscale('log')
-ax.invert_xaxis()
+# ax.invert_xaxis()
 # ax.set_xlim(1, 1e-2)
-ax.set_ylim(70, 90)
-ax.legend(handles=[line2, line1], fontsize=21, framealpha=0.4, loc='lower left')
+ax.set_ylim(65, 95)
+ax.legend(handles=[line3, line2, line1], fontsize=21, framealpha=0.4, loc='lower right')
 ax.set_xlabel('Percentage of annotations used (logarithmic scale)', fontsize=21, color=label_color)
 ax.set_ylabel('Accuracy of malignancy prediction [%]', fontsize=21, color=label_color)
+ax.xaxis.set_major_formatter(mtick.PercentFormatter(xmax=1, decimals=None, symbol='%', is_latex=False))
 ax.tick_params(labelsize=20)
 
-if dark:
-    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.svg')}", 
-                    format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
-else:
-    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.png')}", format='png', dpi=300, bbox_inches='tight')
-    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce.pdf')}", format='pdf', bbox_inches='tight')
+ax.annotate('',
+            xy=(df.at[2, 'Annotation percentage'], df.at[2, 'cRedAnno+']), xycoords='data',
+            xytext=(df.at[1, 'Annotation percentage'], df.at[1, 'cRedAnno']), textcoords='data',
+            arrowprops=dict(arrowstyle="fancy, head_length=3, head_width=3, tail_width=1",  
+                            fc="#F2B134", ec="none", alpha=0.8,
+                            connectionstyle="arc3,rad=0.35"),
+            )
+ax.text(
+    gmean([df.at[2, 'Annotation percentage'], df.at[1, 'Annotation percentage']]), 
+    0.5*(df.at[2, 'cRedAnno+']+df.at[1, 'cRedAnno']) + 4,
+    f"Annotaion$\searrow$ 10x\nAccuracy$\\searrow$ {(abs(df.at[2, 'cRedAnno+'] - df.at[1, 'cRedAnno'])):.2f}%",
+    ha='center', **style_text)
+
+ax.annotate('',
+            xy=(df.at[1, 'Annotation percentage'], df.at[1, 'cRedAnno+']), xycoords='data',
+            xytext=(df.at[0, 'Annotation percentage'], df.at[0, 'cRedAnno']), textcoords='data',
+            arrowprops=dict(arrowstyle="fancy, head_length=3, head_width=3, tail_width=1",  
+                            fc="#F2B134", ec="none", alpha=0.8,
+                            connectionstyle="arc3,rad=0.35"),
+            )
+ax.text(
+    gmean([df.at[1, 'Annotation percentage'], df.at[0, 'Annotation percentage']]), 
+    0.5*(df.at[1, 'cRedAnno+']+df.at[0, 'cRedAnno']) + 4,
+    f"Annotaion$\searrow$ 10x\nAccuracy$\\nearrow$ {(df.at[1, 'cRedAnno+'] - df.at[0, 'cRedAnno']):.2f}%",
+    ha='center', **style_text)
+
+# if dark:
+#     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce+.svg')}", 
+#                     format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
+# else:
+#     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', 'poster', f'anno_reduce+.svg')}", format='svg', bbox_inches='tight')
+#     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'anno_reduce+.pdf')}", format='pdf', bbox_inches='tight')
 
 
 # %%
