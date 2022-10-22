@@ -93,6 +93,10 @@ method_list = [
     {'method':'WeakSup (1:5)', 'subtlety':.431, 'internalStructure':.701, 'calcification':.639, 'sphericity':.424, 'margin':.585, 'lobulation':.406, 'spiculation':.387, 'texture':.512, 'malignancy':.824},
     # {'method':'cRedAnno(1%)', 'subtlety':.9181, 'calcification':.9337, 'sphericity':.9649, 'margin':.9077, 'lobulation':.8973, 'spiculation':.9233, 'texture':.9376, 'malignancy':.8596},
     # {'method':'cRedAnno(kNN)', 'subtlety':.96359, 'calcification':.92588, 'sphericity':.96229, 'margin':.94148, 'lobulation':.90897, 'spiculation':.92328, 'texture':.92718, 'malignancy':.88947},
+
+    {'method':'cRedAnno+ (1%)', 'subtlety':.95839, 'calcification':.92674, 'sphericity':.95969, 'margin':.91027, 'lobulation':.93541, 'spiculation':.92718, 'texture':.92675, 'malignancy':.86216},
+    {'method':'cRedAnno+ (10%)', 'subtlety':.96209, 'calcification':.92718, 'sphericity':.95709, 'margin':.90030, 'lobulation':.93888, 'spiculation':.94671, 'texture':.92415, 'malignancy':.87863},
+    {'method':'cRedAnno+ (100%)', 'subtlety':.96316, 'calcification':.95882, 'sphericity':.97226, 'margin':.96229, 'lobulation':.93931, 'spiculation':.94061, 'texture':.97009, 'malignancy':.87559},
 ]
 
 df_acc = pd.DataFrame(method_list, columns=header)
@@ -140,19 +144,29 @@ ax = sns.histplot(x=df_probs.columns, weights=hist, label='Random', discrete=Tru
 # plot competitors
 palette = itertools.cycle(sns.cubehelix_palette(light=0.7, dark=0.3))
 for method in df_probs.index:
+    if 'cRedAnno' in method:
+        continue
     c = next(palette)
     ax = sns.histplot(x=df_probs.columns, weights=df_probs.loc[method], label=method, discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
 
-# plot ours
-label_dict = {'1p':'1%, trained', '100p':'100%, trained', 'kNN_150_10p':'10%, 150-NN'}
+# # plot ours
+# label_dict = {'1p':'1%, trained', '100p':'100%, trained', 'kNN_150_10p':'10%, 150-NN'}
+# palette = itertools.cycle(sns.color_palette("ch:2,r=.2,d=.0,l=.7"))
+# for method, label in label_dict.items():
+#     pd_FTR, gt_FTR = extract_results(method, os.path.join(output_dir, 'results'))[:2]
+#     correctFTRs, accs_FTR = calculate_correct_FTR(pd_FTR, gt_FTR)    
+#     hist, _ = np.histogram(correctFTRs, bins=np.arange(-0.5, 9.5), density=True)
+#     # sns.histplot(data=correctFTRs, bins=df_probs.columns, label='cRedAnno', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':2.5}, color='green')
+#     c = next(palette)
+#     ax = sns.histplot(x=df_probs.columns, weights=hist, label=f'cRedAnno ({label})', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
+
+# plot cRedAnno+
 palette = itertools.cycle(sns.color_palette("ch:2,r=.2,d=.0,l=.7"))
-for method, label in label_dict.items():
-    pd_FTR, gt_FTR = extract_results(method, os.path.join(output_dir, 'results'))[:2]
-    correctFTRs, accs_FTR = calculate_correct_FTR(pd_FTR, gt_FTR)    
-    hist, _ = np.histogram(correctFTRs, bins=np.arange(-0.5, 9.5), density=True)
-    # sns.histplot(data=correctFTRs, bins=df_probs.columns, label='cRedAnno', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':2.5}, color='green')
+for method in df_probs.index:
+    if 'cRedAnno' not in method:
+        continue
     c = next(palette)
-    ax = sns.histplot(x=df_probs.columns, weights=hist, label=f'cRedAnno ({label})', discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
+    ax = sns.histplot(x=df_probs.columns, weights=df_probs.loc[method], label=method, discrete=True, common_norm=False, stat="probability", alpha=0.3, kde=True, kde_kws={'bw_adjust':.7}, line_kws={'linewidth': 3}, color=c, edgecolor=c);
 
 plt.legend(fontsize=16.5, framealpha=0.4, loc='upper left')
 plt.xlabel('Number of correctly predicted nodule attributes', fontsize=21, color=label_color)
@@ -161,9 +175,9 @@ plt.xticks(df_probs.columns)
 plt.tick_params(labelsize=16.5)
 
 if dark:
-    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'prob_ftr_prediction.svg')}", format='svg', bbox_inches='tight', edgecolor='none')
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'prob_ftr_prediction+.svg')}", format='svg', bbox_inches='tight', edgecolor='none')
 else:
-    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'prob_ftr_prediction.pdf')}", format='pdf', bbox_inches='tight')
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'prob_ftr_prediction+.pdf')}", format='pdf', bbox_inches='tight')
 
 
 
@@ -174,7 +188,7 @@ df = pd.read_csv(f"{os.path.join(output_dir, 'results', 'pred_results_kNN_250.cs
 
 embds = np.asarray(df.loc[:, '0':])
 embds_pca = PCA(n_components=0.99, whiten=False).fit_transform(embds)
-embds_tsne = TSNE(n_components=2, init='random', learning_rate='auto', random_state=42).fit_transform(embds)
+embds_tsne = TSNE(n_components=2, init='random', learning_rate='auto', random_state=44).fit_transform(embds)
 df['embd_tsne_dim0'] = embds_tsne[:, 0]
 df['embd_tsne_dim1'] = embds_tsne[:, 1]
 
@@ -211,8 +225,8 @@ if dark:
     label_color = 'white'
 
 output_dir = './logs/vits16_pretrain_full_2d_ann'
-xlim = (-113, 77)
-ylim = (-103, 67)
+xlim = (-113, 60)
+ylim = (-103, 60)
 for task, d in legend_dict.items():
     if not dark:
         sns.set_theme(style="white", palette=None) # palette='viridis'
@@ -224,7 +238,7 @@ for task, d in legend_dict.items():
         # break
         fig = sns.jointplot(data=df, x='embd_tsne_dim0', y='embd_tsne_dim1', hue=f'gt_{task}', kind='scatter', xlim=xlim, ylim=ylim, 
                             palette='flare', alpha=0.6, s=40)
-    fig.plot_joint(sns.kdeplot, zorder=0, levels=3, alpha=0.3)
+    # fig.plot_joint(sns.kdeplot, zorder=0, levels=3, alpha=0.3)
     fig.set_axis_labels('', '')
     fig.ax_joint.set_xticks([])
     fig.ax_joint.set_yticks([])
@@ -472,8 +486,9 @@ method_list_fullanno = [
     # {'method':'WeakSup (1:3)', 'Sub':.668, 'internalStructure':.973, 'Cal':.915, 'Sph':.664, 'Mar':.796, 'Lob':.743, 'Spi':.814, 'Tex':.822, 'Malignancy':.891},
     # {'method':'WeakSup (1:5)', 'Sub':.431, 'internalStructure':.701, 'Cal':.639, 'Sph':.424, 'Mar':.585, 'Lob':.406, 'Spi':.387, 'Tex':.512, 'Malignancy':.824},
     # {'method':'cRedAnno (1%)', 'Sub':.9181, 'Cal':.9337, 'Sph':.9649, 'Mar':.9077, 'Lob':.8973, 'Spi':.9233, 'Tex':.9376, 'Malignancy':.8596},
-    {'method':'cRedAnno (trained)', 'Sub':.9584, 'Cal':.9597, 'Sph':.9740, 'Mar':.9649, 'Lob':.9415, 'Spi':.9441, 'Tex':.9701, 'Malignancy':.8830},
-    {'method':'cRedAnno (250-NN)', 'Sub':.96359, 'Cal':.92588, 'Sph':.96229, 'Mar':.94148, 'Lob':.90897, 'Spi':.92328, 'Tex':.92718, 'Malignancy':.88947},
+    # {'method':'cRedAnno (trained)', 'Sub':.9584, 'Cal':.9597, 'Sph':.9740, 'Mar':.9649, 'Lob':.9415, 'Spi':.9441, 'Tex':.9701, 'Malignancy':.8830},
+    # {'method':'cRedAnno (250-NN)', 'Sub':.96359, 'Cal':.92588, 'Sph':.96229, 'Mar':.94148, 'Lob':.90897, 'Spi':.92328, 'Tex':.92718, 'Malignancy':.88947},
+    {'method':'cRedAnno+', 'Sub':.96316, 'Cal':.95882, 'Sph':.97226, 'Mar':.96229, 'Lob':.93931, 'Spi':.94061, 'Tex':.97009, 'Malignancy':.87559},
 ]
 df_acc_fullanno = pd.DataFrame(method_list_fullanno, columns=header)
 
@@ -483,10 +498,13 @@ method_list_partialanno = [
     # {'method':'MSN-JCN', 'Sub':.7077, 'Cal':.9407, 'Sph':.6863, 'Mar':.7888, 'Lob':.9475, 'Spi':.9375, 'Tex':.89, 'Malignancy':.8707},
     {'method':'WeakSup (1:3)', 'Sub':.668, 'internalStructure':.973, 'Cal':.915, 'Sph':.664, 'Mar':.796, 'Lob':.743, 'Spi':.814, 'Tex':.822, 'Malignancy':.891},
     {'method':'WeakSup (1:5)', 'Sub':.431, 'internalStructure':.701, 'Cal':.639, 'Sph':.424, 'Mar':.585, 'Lob':.406, 'Spi':.387, 'Tex':.512, 'Malignancy':.824},
-    {'method':'cRedAnno (1%, trained)', 'Sub':.9181, 'Cal':.9337, 'Sph':.9649, 'Mar':.9077, 'Lob':.8973, 'Spi':.9233, 'Tex':.9376, 'Malignancy':.8609},
-    {'method':'cRedAnno (10%, 150-NN)', 'Sub':.9532, 'Cal':.8947, 'Sph':.9701, 'Mar':.9389, 'Lob':.9181, 'Spi':.9051, 'Tex':.9285, 'Malignancy':.8817},
+    # {'method':'cRedAnno (1%, trained)', 'Sub':.9181, 'Cal':.9337, 'Sph':.9649, 'Mar':.9077, 'Lob':.8973, 'Spi':.9233, 'Tex':.9376, 'Malignancy':.8609},
+    # {'method':'cRedAnno (10%, 150-NN)', 'Sub':.9532, 'Cal':.8947, 'Sph':.9701, 'Mar':.9389, 'Lob':.9181, 'Spi':.9051, 'Tex':.9285, 'Malignancy':.8817},
     # {'method':'cRedAnno (trained)', 'Sub':.9584, 'Cal':.9597, 'Sph':.9740, 'Mar':.9649, 'Lob':.9415, 'Spi':.9441, 'Tex':.9701, 'Malignancy':.8830},
     # {'method':'cRedAnno (250-NN)', 'Sub':.96359, 'Cal':.92588, 'Sph':.96229, 'Mar':.94148, 'Lob':.90897, 'Spi':.92328, 'Tex':.92718, 'Malignancy':.88947},
+    {'method':'cRedAnno+ (1%)', 'Sub':.95839, 'Cal':.92674, 'Sph':.95969, 'Mar':.91027, 'Lob':.93541, 'Spi':.92718, 'Tex':.92675, 'Malignancy':.86216},
+    {'method':'cRedAnno+ (10%)', 'Sub':.96209, 'Cal':.92718, 'Sph':.95709, 'Mar':.90030, 'Lob':.93888, 'Spi':.94671, 'Tex':.92415, 'Malignancy':.87863},
+
 ]
 df_acc_partialanno = pd.DataFrame(method_list_partialanno, columns=header)
 
@@ -514,6 +532,7 @@ plt.rcParams['legend.title_fontsize'] = '21'
 def plot_pizza(df_acc):
     columns_titles = ['method', 'Malignancy', 'Sub', 'Cal', 'Sph', 'Mar', 'Lob', 'Spi', 'Tex', 'internalStructure']
     df_acc = df_acc.reindex(columns=columns_titles)
+    n_credanno = sum(['cRedAnno' in method for method in df_acc.method])
 
     theta = radar_factory(8, frame='polygon')
 
@@ -526,7 +545,7 @@ def plot_pizza(df_acc):
     # plot competitors
     palette = itertools.cycle(sns.color_palette("flare"))
     markers = itertools.cycle(('p', '*', '.', 'P', 'X', '+', 'x', 'h', 'H', '1')) 
-    for _, row in df_acc[:-2].iterrows():
+    for _, row in df_acc[:-n_credanno].iterrows():
         values = row['Malignancy':'Tex'].to_numpy()
         c = next(palette)
         m = next(markers)
@@ -534,7 +553,9 @@ def plot_pizza(df_acc):
         ax.fill(theta[pd.notna(values)], values[pd.notna(values)], alpha=0.1, color=c, label='_nolegend_')
     # plot ours
     palette = itertools.cycle(sns.color_palette("ch:2,r=.2,d=.0,l=.7"))
-    for _, row in df_acc[-2:].iterrows():
+    for _, row in df_acc[-n_credanno:].iterrows():
+        if row['method'] == 'cRedAnno+':
+            c = next(palette)
         values = row['Malignancy':'Tex'].to_numpy()
         c = next(palette)
         line = ax.plot(theta, values, label=row['method'], color=c, lw=4)
@@ -552,25 +573,25 @@ def plot_pizza(df_acc):
 
 
 fig, ax = plot_pizza(df_acc_fullanno)
-plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, title="Full annotation", loc='lower left', bbox_to_anchor=(1., 0.))
+plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.23))
 if dark:
-    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno.svg')}", 
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno+.svg')}", 
                     format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
 else:
-    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno.png')}", format='png', dpi=300, bbox_inches='tight')
-    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno.pdf')}", format='pdf', bbox_inches='tight')
-    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', 'poster', f'pizza_fullanno.svg')}", format='svg', bbox_inches='tight')
+    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno+.png')}", format='png', dpi=300, bbox_inches='tight')
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno+.pdf')}", format='pdf', bbox_inches='tight')
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', 'poster', f'pizza_fullanno+.svg')}", format='svg', bbox_inches='tight')
 
 
 fig, ax = plot_pizza(df_acc_partialanno)
-plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, title="Partial annotation", loc='lower left', bbox_to_anchor=(1., 0.))
+plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.23))
 if dark:
-    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno.svg')}", 
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno+.svg')}", 
                     format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
 else:
-    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno.png')}", format='png', dpi=300, bbox_inches='tight')
-    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno.pdf')}", format='pdf', bbox_inches='tight')
-    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', 'poster', f'pizza_partialanno.svg')}", format='svg', bbox_inches='tight')
+    # plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno+.png')}", format='png', dpi=300, bbox_inches='tight')
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno+.pdf')}", format='pdf', bbox_inches='tight')
+    plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', 'poster', f'pizza_partialanno+.svg')}", format='svg', bbox_inches='tight')
 
 
 # plt.show()
