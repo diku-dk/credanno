@@ -563,17 +563,18 @@ def plot_pizza(df_acc):
 
 
     ax.set_rlabel_position(0)
-    ax.set_rgrids([0., 0.2, 0.4, 0.6, 0.8, 1.], fontsize=16.5)
+    plt.setp( ax.yaxis.get_majorticklabels(), va="center" )
+    ax.set_rgrids([0., 0.2, 0.4, 0.6, 0.8, 1.], fontsize=18)
     ax.set_rlim(0, 1)
     # ax.set_title(title,  position=(0.5, 1.1), ha='center')
-    ax.xaxis.set_tick_params(pad=10)
+    ax.xaxis.set_tick_params(pad=14)
     # ax.set_varlabels(spoke_labels, fontsize=21)
     plt.xticks(theta, spoke_labels, size=21, color=label_color)
     return fig, ax
 
 
 fig, ax = plot_pizza(df_acc_fullanno)
-plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.23))
+plt.legend(fontsize=21, framealpha=0.4, labelcolor=label_color, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.28))
 if dark:
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_fullanno+.svg')}", 
                     format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
@@ -584,7 +585,7 @@ else:
 
 
 fig, ax = plot_pizza(df_acc_partialanno)
-plt.legend(fontsize=16.5, framealpha=0.4, labelcolor=label_color, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.23))
+plt.legend(fontsize=21, framealpha=0.4, labelcolor=label_color, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.28))
 if dark:
     plt.savefig(f"{os.path.join(output_dir, 'results', 'imgs', f'pizza_partialanno+.svg')}", 
                     format='svg', bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
