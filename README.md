@@ -1,3 +1,5 @@
+[![DOI:10.1007/978-3-031-17976-1_4](https://img.shields.io/badge/DOI-10.1007%2F978--3--031--17976--1__4-AB132F.svg?style=flat)](https://doi.org/10.1007/978-3-031-17976-1_4)
+
 # cRedAnno 🤏
 
 [[`arXiv`](https://arxiv.org/abs/2206.13608)] [[`Poster`](https://ludles.github.io/assets/pdf/poster_credanno.pdf)] [[`Slides`](https://ludles.github.io/assets/pdf/slides_credanno_MICCAI2022.pdf)] [[`Dataset`](https://wiki.cancerimagingarchive.net/display/Public/LIDC-IDRI)]
