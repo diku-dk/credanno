@@ -6,6 +6,7 @@
 
 - v2 (cRedAnno+): 
 [[`arXiv`](https://arxiv.org/abs/2210.16097)] 
+[[`Poster`](https://ludles.github.io/assets/pdf/poster_credanno_ISBI2023.pdf)] 
 
 - v1 (cRedAnno):
 [[`arXiv`](https://arxiv.org/abs/2206.13608)] 
